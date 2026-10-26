@@ -1,0 +1,34 @@
+# Kör appen bakom Caddy, som hämtar HTTPS-certifikat automatiskt.
+# Sätt DOMAIN och PUBLIC_URL i .env och starta med: docker compose up -d --build
+services:
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      PORT: "3000"
+      # Appen ligger bakom Caddy; behövs för att se besökarnas riktiga IP-adress.
+      TRUST_PROXY: "1"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      DOMAIN: ${DOMAIN:?Sätt DOMAIN i .env, t.ex. DOMAIN=floorballflash.example.se}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

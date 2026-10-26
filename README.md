@@ -51,16 +51,46 @@ Utan SMTP skrivs mejlen till serverloggen, där godkännande- och lösenordslän
 2. Öppna länken i mejlet till administratörsadressen och välj ett starkt lösenord.
 3. Logga in med administratörens e-postadress och lösenordet.
 
-### Docker
+### Driftsättning med Docker (Ubuntu)
+
+`docker-compose.yml` kör appen bakom [Caddy](https://caddyserver.com), som skaffar och förnyar
+HTTPS-certifikat automatiskt. Det krävs ett domännamn vars DNS (A-post) pekar på serverns IP, och
+portarna 80 och 443 måste vara öppna.
 
 ```bash
-docker build -t floorballflash .
-docker run -d -p 3000:3000 -v floorballflash-data:/data --env-file .env floorballflash
+# 1. Installera Docker
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER        # logga ut och in igen
+
+# 2. Hämta koden och skapa inställningarna
+git clone https://github.com/CodeconTech/Floorballflash.git /opt/floorballflash
+cd /opt/floorballflash
+cp .env.example .env && chmod 600 .env
+nano .env                            # sätt DOMAIN, PUBLIC_URL och SMTP-uppgifter
+
+# 3. Starta
+docker compose up -d --build
+docker compose logs -f app
 ```
 
-Kör bakom HTTPS (t.ex. Caddy eller nginx) i produktion; sätt `PUBLIC_URL=https://…` så får
-sessionscookien `Secure`. Om proxyn begränsar storleken på uppladdningar (nginx `client_max_body_size`)
-måste den höjas till `MAX_UPLOAD_MB`.
+Om brandväggen ufw används: `sudo ufw allow 80,443/tcp`.
+
+Databasen och filmerna sparas i `./data` (bredvid `docker-compose.yml`). Säkerhetskopiera den katalogen,
+t.ex. nattligt via `crontab -e`:
+
+```
+0 3 * * * tar czf /var/backups/floorballflash-$(date +\%F).tar.gz -C /opt/floorballflash data
+```
+
+Uppdatera till senaste versionen:
+
+```bash
+cd /opt/floorballflash && git pull && docker compose up -d --build
+```
+
+Utan Caddy går det också att köra bara appen (`docker build -t floorballflash . && docker run -d
+-p 3000:3000 -v floorballflash-data:/data --env-file .env floorballflash`), men lägg då en
+HTTPS-proxy framför och sätt `TRUST_PROXY` till antalet proxy-hopp.
 
 ## Datakälla
 
