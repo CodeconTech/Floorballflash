@@ -1,0 +1,26 @@
+{
+  "name": "floorballflash",
+  "version": "1.0.0",
+  "description": "Innebandyresultat med liveuppdateringar och matchklipp.",
+  "main": "src/server.js",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "IBIS_MOCK=1 node --disable-warning=ExperimentalWarning src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodeconTech/Floorballflash.git"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "express": "^4.22.3",
+    "multer": "^2.5.0",
+    "nodemailer": "^10.2.1"
+  }
+}
