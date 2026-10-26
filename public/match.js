@@ -4,6 +4,8 @@
   const { api, el } = FF;
   const matchId = parseInt(new URLSearchParams(location.search).get('id'), 10);
   let match = null;
+  let user = null;
+  let stream = null;
 
   function renderScoreboard(prev) {
     const m = match;
@@ -117,6 +119,122 @@
     area.replaceChildren(form);
   }
 
+  function copyButton(text) {
+    const btn = el('button', { class: 'btn small secondary', type: 'button' }, 'Kopiera');
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Kopierad!';
+      } catch {
+        prompt('Kopiera länken:', text);
+      }
+    });
+    return btn;
+  }
+
+  async function saveStream(body, msg) {
+    try {
+      stream = (await api(`/api/matches/${matchId}/stream`, { method: 'PUT', body })).stream;
+      renderStream();
+    } catch (err) {
+      FF.message(msg, err.message);
+    }
+  }
+
+  function streamForm(cancel) {
+    const msg = el('div');
+    const input = el('input', { type: 'url', id: 'stream-url', required: true, placeholder: 'https://vdo.ninja/?view=…', autocomplete: 'off' });
+    const form = el('form', {},
+      el('div', { class: 'field' },
+        el('label', { for: 'stream-url' }, 'Länk från vdo.ninja'),
+        input,
+        el('div', { class: 'hint' }, 'Klistra in visningslänken (?view=…) eller sändningslänken (?push=…). Besökarna får alltid bara visningslänken.')),
+      msg,
+      el('div', { class: 'row' },
+        el('button', { class: 'btn', type: 'submit' }, 'Koppla sändning'),
+        el('button', {
+          class: 'btn secondary',
+          type: 'button',
+          onclick: () => saveStream({ generate: true }, msg),
+        }, 'Skapa ny sändning åt mig'),
+        cancel ? el('button', { class: 'btn link', type: 'button', onclick: cancel }, 'Avbryt') : ''),
+    );
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      saveStream({ url: input.value }, msg);
+    });
+    return form;
+  }
+
+  function renderStream() {
+    const card = document.getElementById('stream-card');
+    const area = document.getElementById('stream-area');
+    if (!stream) {
+      card.classList.toggle('hidden', !user);
+      if (user) {
+        area.replaceChildren(
+          el('p', { class: 'muted', text: 'Ska matchen sändas? Koppla en livesändning från VDO.Ninja så kan alla titta här på sidan.' }),
+          streamForm(),
+        );
+      }
+      return;
+    }
+    card.classList.remove('hidden');
+    // Keep the player running if only the surrounding info changed.
+    const existing = area.querySelector('iframe');
+    const frame = existing && existing.src === stream.embedUrl
+      ? existing
+      : el('iframe', {
+          src: stream.embedUrl,
+          title: 'Livesändning',
+          allow: 'autoplay; fullscreen; picture-in-picture',
+          allowfullscreen: true,
+          referrerpolicy: 'no-referrer',
+        });
+    const manage = [];
+    if (stream.canManage) {
+      manage.push(
+        el('div', { class: 'push-box' },
+          el('label', { for: 'push-url' }, 'Länk för kameran'),
+          el('div', { class: 'hint', text: 'Öppna länken i mobilen eller datorn som filmar och starta sändningen. Dela den inte med publiken.' }),
+          el('div', { class: 'row nowrap' },
+            el('input', { id: 'push-url', type: 'text', readonly: true, value: stream.pushUrl }),
+            copyButton(stream.pushUrl),
+            el('a', { class: 'btn small secondary', href: stream.pushUrl, target: '_blank', rel: 'noopener' }, 'Öppna'))),
+        el('div', { class: 'row' },
+          el('button', {
+            class: 'btn small secondary',
+            type: 'button',
+            onclick: () => area.replaceChildren(streamForm(renderStream)),
+          }, 'Byt länk'),
+          el('button', {
+            class: 'btn small danger',
+            type: 'button',
+            onclick: async () => {
+              if (!confirm('Ta bort livesändningen från matchen?')) return;
+              try {
+                await api(`/api/matches/${matchId}/stream`, { method: 'DELETE' });
+                stream = null;
+                renderStream();
+              } catch (err) { alert(err.message); }
+            },
+          }, 'Ta bort sändning')),
+      );
+    }
+    area.replaceChildren(
+      el('div', { class: 'stream-frame' }, frame),
+      el('p', { class: 'muted small' },
+        `Sänds via VDO.Ninja · tillagd av ${stream.setBy} · `,
+        el('a', { href: stream.viewUrl, target: '_blank', rel: 'noopener' }, 'Öppna i nytt fönster')),
+      ...manage,
+    );
+  }
+
+  async function loadStream() {
+    stream = (await api(`/api/matches/${matchId}/stream`)).stream;
+    renderStream();
+  }
+
   function connectLive() {
     const es = new EventSource(`/api/live?match=${matchId}`);
     es.addEventListener('match', (e) => {
@@ -125,6 +243,13 @@
       renderScoreboard(prev);
       renderEvents();
     });
+    es.addEventListener('stream', async (e) => {
+      const update = JSON.parse(e.data).stream;
+      // Re-fetch when we may manage it, so the push link stays available.
+      if (update && user) return loadStream().catch(() => {});
+      stream = update;
+      renderStream();
+    });
   }
 
   async function init() {
@@ -132,7 +257,11 @@
       document.getElementById('scoreboard').replaceChildren(el('p', { text: 'Ingen match vald.' }));
       return;
     }
-    FF.renderTopbar().then(renderUpload);
+    FF.renderTopbar().then((me) => {
+      user = me;
+      renderUpload(me);
+      return loadStream();
+    }).catch(() => {});
     loadVideos().catch(() => {});
     try {
       match = (await api(`/api/matches/${matchId}`)).match;

@@ -144,3 +144,48 @@ test('admin password is created via mailed link and must be strong', async () =>
   res = await call('/api/auth/login', { method: 'POST', body: { email: 'spelare@exempel.se', pin: 'Ab12Cd34' } });
   assert.equal(res.status, 403);
 });
+
+test('VDO.Ninja links are reduced to a view link', () => {
+  const { parseLink } = require('../src/streams');
+  assert.deepEqual(parseLink('https://vdo.ninja/?view=abc_123'), { streamId: 'abc_123', password: null });
+  assert.deepEqual(parseLink('https://vdo.ninja/alpha/?push=Cam1&password=hemlig'), { streamId: 'Cam1', password: 'hemlig' });
+  assert.throws(() => parseLink('http://vdo.ninja/?view=abc'));
+  assert.throws(() => parseLink('https://evil.example/?view=abc'));
+  assert.throws(() => parseLink('https://vdo.ninja/?view=<script>'));
+  assert.throws(() => parseLink('https://vdo.ninja/'));
+});
+
+test('approved users attach a live stream that everyone sees', async () => {
+  const pin = 'Str34mPn';
+  await call('/api/auth/register', { method: 'POST', body: { email: 'kamera@exempel.se', pin } });
+  await call('/api/auth/register', { method: 'POST', body: { email: 'annan@exempel.se', pin } });
+  db.prepare("UPDATE users SET status = 'approved' WHERE email IN ('kamera@exempel.se', 'annan@exempel.se')").run();
+  const login = async (email) => cookieOf(await call('/api/auth/login', { method: 'POST', body: { email, pin } }));
+  const cookie = await login('kamera@exempel.se');
+  const other = await login('annan@exempel.se');
+
+  let res = await call('/api/matches/7000106/stream', { method: 'PUT', body: { url: 'https://vdo.ninja/?view=x' } });
+  assert.equal(res.status, 401);
+
+  res = await call('/api/matches/7000106/stream', { method: 'PUT', body: { url: 'https://vdo.ninja/?push=matchcam' }, cookie });
+  assert.equal(res.status, 200);
+  const { stream } = await res.json();
+  assert.equal(stream.embedUrl, 'https://vdo.ninja/?view=matchcam');
+  assert.equal(stream.pushUrl, 'https://vdo.ninja/?push=matchcam');
+
+  const anon = (await (await call('/api/matches/7000106/stream')).json()).stream;
+  assert.equal(anon.embedUrl, 'https://vdo.ninja/?view=matchcam');
+  assert.equal(anon.pushUrl, undefined, 'push link is not public');
+
+  const { matches } = await (await call('/api/schedule')).json();
+  assert.equal(matches.find((m) => m.id === 7000106).hasStream, true);
+
+  res = await call('/api/matches/7000106/stream', { method: 'PUT', body: { generate: true }, cookie: other });
+  assert.equal(res.status, 403, 'others cannot replace it');
+  res = await call('/api/matches/7000106/stream', { method: 'DELETE', cookie: other });
+  assert.equal(res.status, 403);
+
+  res = await call('/api/matches/7000106/stream', { method: 'DELETE', cookie });
+  assert.equal(res.status, 200);
+  assert.equal((await (await call('/api/matches/7000106/stream')).json()).stream, null);
+});

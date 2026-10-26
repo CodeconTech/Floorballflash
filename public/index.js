@@ -16,6 +16,7 @@
       el('div', { class: `team away${ours(m.away) ? ' us' : ''}` }, FF.teamLogo(m.away, 28), el('span', { text: m.away.name })),
       el('div', { class: 'meta' },
         FF.statusBadge(m),
+        m.hasStream && !m.finished ? el('span', { class: 'badge stream', text: '📹 Video' }) : null,
         clips ? el('span', { class: 'badge clips', text: `🎬 ${clips}` }) : null),
     );
   }
@@ -61,6 +62,7 @@
 
   function connectLive() {
     const es = new EventSource('/api/live');
+    es.addEventListener('stream', onStream);
     es.addEventListener('score', (e) => {
       if (!data) return;
       const update = JSON.parse(e.data);
@@ -71,6 +73,16 @@
       render();
       if (scoreChanged) document.querySelectorAll(`[data-id="${m.id}"] .score`).forEach((n) => n.classList.add('flash'));
     });
+  }
+
+  function onStream(e) {
+    if (!data) return;
+    const { id, hasStream } = JSON.parse(e.data);
+    const m = data.matches.find((x) => x.id === id);
+    if (m) {
+      m.hasStream = hasStream;
+      render();
+    }
   }
 
   FF.renderTopbar();

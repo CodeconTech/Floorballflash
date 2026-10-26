@@ -9,6 +9,12 @@ liveuppdateringar under matcherna och filmklipp som godkända användare laddar 
 - **Spelprogram och resultat** – kommande matcher, pågående matcher och resultat.
 - **Live** – servern hämtar pågående matcher var 20:e sekund och skickar ändringar direkt till
   webbläsaren (Server-Sent Events). Matchsidan visar ställning, periodresultat, mål och utvisningar.
+- **Livesändning via VDO.Ninja** – på varje matchsida kan en inloggad användare koppla en länk från
+  [vdo.ninja](https://vdo.ninja) (eller låta sidan skapa en ny sändning). Sändningen bäddas in på
+  matchsidan för alla besökare och startsidan markerar matchen med *📹 Video*. Både visningslänk
+  (`?view=…`) och sändningslänk (`?push=…`) går att klistra in – besökarna får alltid bara
+  visningslänken. Den som kopplat sändningen (och admin) ser länken för kameran och kan byta eller
+  ta bort sändningen.
 - **Filmklipp** – inloggade användare laddar upp klipp (mp4, mov, m4v, webm, ogv) till en match.
   Alla besökare kan titta, utan inloggning.
 - **Inloggning med e-post och pinkod** – pinkoden är exakt 8 tecken (bokstäver/siffror).

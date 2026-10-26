@@ -16,7 +16,7 @@ app.use((req, res, next) => {
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'same-origin',
     'Content-Security-Policy':
-      "default-src 'self'; img-src 'self' data: https:; media-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
+      "default-src 'self'; img-src 'self' data: https:; media-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-src https://vdo.ninja; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
   });
   next();
 });
@@ -29,6 +29,7 @@ app.use(require('./routes/matches').router);
 app.use(require('./routes/users').router);
 app.use(require('./routes/admin').router);
 app.use(require('./routes/videos').router);
+app.use(require('./routes/streams').router);
 
 app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 

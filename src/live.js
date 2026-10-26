@@ -23,6 +23,14 @@ function broadcast(match) {
   }
 }
 
+/** Tells match page viewers (and the schedule) that a match's live video changed. */
+function broadcastStream(matchId, stream) {
+  for (const c of clients) {
+    if (c.matchId === null) send(c.res, 'stream', { id: matchId, hasStream: Boolean(stream) });
+    else if (c.matchId === matchId) send(c.res, 'stream', { stream });
+  }
+}
+
 function summary(m) {
   return {
     id: m.id,
@@ -107,4 +115,4 @@ function stop() {
   clients.clear();
 }
 
-module.exports = { subscribe, start, stop };
+module.exports = { subscribe, start, stop, broadcastStream };

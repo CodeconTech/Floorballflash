@@ -77,6 +77,15 @@ db.exec(`
     value TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS match_streams (
+    match_id   INTEGER PRIMARY KEY,
+    stream_id  TEXT NOT NULL,
+    password   TEXT,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    set_by     TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS mail_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     recipient  TEXT NOT NULL,

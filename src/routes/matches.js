@@ -3,18 +3,20 @@
 const express = require('express');
 const ibis = require('../ibis');
 const live = require('../live');
+const streams = require('../streams');
 
 const router = express.Router();
 
 router.get('/api/schedule', async (req, res) => {
   const s = await ibis.getSchedule();
+  const withStream = streams.matchIdsWithStream();
   res.set('Cache-Control', 'no-cache');
   res.json({
     teamId: s.teamId,
     seasonId: s.seasonId,
     updatedAt: s.at,
     error: s.matches.length ? null : s.error,
-    matches: s.matches.map(({ events, ...m }) => m),
+    matches: s.matches.map(({ events, ...m }) => ({ ...m, hasStream: withStream.has(m.id) })),
   });
 });
 
