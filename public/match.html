@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Match – Floorballflash</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/common.js" defer></script>
+  <script src="/match.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🏑 Floorballflash</a>
+    <nav id="nav"></nav>
+  </header>
+  <main>
+    <p><a href="/">← Spelprogram</a></p>
+    <section class="card scoreboard" id="scoreboard"><p class="muted">Hämtar match…</p></section>
+
+    <section class="card hidden" id="stream-card">
+      <h2>📹 Livesändning</h2>
+      <div id="stream-area"></div>
+    </section>
+
+    <div class="grid-2">
+      <section class="card">
+        <h2>Händelser</h2>
+        <div id="events"></div>
+      </section>
+      <section class="card" id="upload-card">
+        <h2>Ladda upp klipp</h2>
+        <div id="upload-area"></div>
+      </section>
+    </div>
+
+    <div class="section-head"><h2>Filmklipp från matchen</h2></div>
+    <div id="videos" class="videos"></div>
+  </main>
+</body>
+</html>

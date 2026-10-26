@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin – Floorballflash</title>
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/common.js" defer></script>
+  <script src="/admin.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🏑 Floorballflash</a>
+    <nav id="nav"></nav>
+  </header>
+
+  <main class="narrow hidden" id="auth-view">
+    <section class="card" id="login-card">
+      <h1>Admin</h1>
+      <form id="admin-login">
+        <div class="field">
+          <label for="a-email">E-postadress</label>
+          <input id="a-email" name="email" type="email" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="a-pass">Lösenord</label>
+          <input id="a-pass" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <div id="login-msg"></div>
+        <div class="row">
+          <button class="btn" type="submit">Logga in</button>
+          <button class="btn link" type="button" id="request-link">Skapa / glömt lösenord</button>
+        </div>
+      </form>
+      <div id="link-msg"></div>
+    </section>
+
+    <section class="card hidden" id="setpw-card">
+      <h1>Skapa adminlösenord</h1>
+      <form id="setpw-form">
+        <input type="email" autocomplete="username" class="hidden" aria-hidden="true" tabindex="-1">
+        <div class="field">
+          <label for="pw1">Nytt lösenord</label>
+          <input id="pw1" name="password" type="password" autocomplete="new-password" required minlength="12">
+          <div class="strength"><i id="strength-bar"></i></div>
+          <div class="hint" id="pw-hint">Minst 12 tecken och minst tre av: små bokstäver, stora bokstäver, siffror, specialtecken.</div>
+        </div>
+        <div class="field">
+          <label for="pw2">Upprepa lösenord</label>
+          <input id="pw2" name="password2" type="password" autocomplete="new-password" required>
+        </div>
+        <div id="setpw-msg"></div>
+        <div class="row">
+          <button class="btn" type="submit">Spara lösenord</button>
+          <button class="btn secondary" type="button" id="suggest">Föreslå starkt lösenord</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <main class="hidden" id="admin-view">
+    <h1>Administration</h1>
+
+    <section class="card">
+      <div class="section-head flush"><h2>Användare</h2><span class="muted" id="user-summary"></span></div>
+      <div id="users-msg"></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>E-post</th><th>Status</th><th>Registrerad</th><th>Senast inloggad</th><th>Klipp</th><th></th></tr></thead>
+        <tbody id="users"></tbody>
+      </table></div>
+    </section>
+
+    <section class="card">
+      <h2>Lag och datakälla</h2>
+      <p class="muted">Spelprogrammet hämtas från innebandyförbundets API (samma som stats.innebandy.se). Lag- och säsongs-ID finns i adressen, t.ex. <code>stats.innebandy.se/sasong/<b>44</b>/lag/<b>120879</b>/spelprogram</code>.</p>
+      <form id="settings-form">
+        <div class="grid-2">
+          <div class="field"><label for="s-team">Lag-ID</label><input id="s-team" name="teamId" type="number" min="1" required></div>
+          <div class="field"><label for="s-season">Säsongs-ID</label><input id="s-season" name="seasonId" type="number" min="1" required></div>
+        </div>
+        <div class="field">
+          <label for="s-comp">Serie-ID:n (valfritt)</label>
+          <input id="s-comp" name="competitionIds" type="text" placeholder="t.ex. 41234, 41235">
+          <div class="hint">Alla matcher i serierna hämtas och filtreras på laget. Serie-ID syns i adressen på seriens sida på stats.innebandy.se.</div>
+        </div>
+        <div class="field">
+          <label for="s-extra">Extra match-ID:n (valfritt)</label>
+          <input id="s-extra" name="extraMatchIds" type="text" placeholder="t.ex. träningsmatcher eller cupmatcher">
+        </div>
+        <div class="field">
+          <label for="s-path">Egen API-sökväg för lagets matcher (avancerat)</label>
+          <input id="s-path" name="teamMatchesPath" type="text" placeholder="/v2/api/public/seasons/{seasonId}/teams/{teamId}/matches">
+        </div>
+        <div id="settings-msg"></div>
+        <button class="btn" type="submit">Spara och hämta</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Filmklipp</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Titel</th><th>Match</th><th>Uppladdat av</th><th>Storlek</th><th>Datum</th><th></th></tr></thead>
+        <tbody id="videos"></tbody>
+      </table></div>
+    </section>
+
+    <section class="card">
+      <h2>Skickad e-post</h2>
+      <p class="muted" id="smtp-info"></p>
+      <div id="mails"></div>
+    </section>
+
+    <section class="card">
+      <h2>Lösenord</h2>
+      <p class="muted">Byt lösenord genom att få en ny länk till administratörens e-post.</p>
+      <button class="btn secondary" id="change-pw">Skicka länk för nytt lösenord</button>
+      <div id="change-msg"></div>
+    </section>
+  </main>
+</body>
+</html>

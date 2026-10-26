@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Logga in – Floorballflash</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/common.js" defer></script>
+  <script src="/login.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🏑 Floorballflash</a>
+    <nav id="nav"></nav>
+  </header>
+  <main class="narrow">
+    <section class="card">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-login" aria-selected="true" aria-controls="login-form">Logga in</button>
+        <button role="tab" id="tab-register" aria-selected="false" aria-controls="register-form">Skapa konto</button>
+      </div>
+
+      <form id="login-form" role="tabpanel" aria-labelledby="tab-login">
+        <div class="field">
+          <label for="login-email">E-postadress</label>
+          <input id="login-email" name="email" type="email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label for="login-pin">Pinkod (8 tecken)</label>
+          <input id="login-pin" name="pin" type="password" autocomplete="current-password" minlength="8" maxlength="8" pattern="[A-Za-z0-9]{8}" required>
+        </div>
+        <div id="login-msg"></div>
+        <button class="btn" type="submit">Logga in</button>
+      </form>
+
+      <form id="register-form" role="tabpanel" aria-labelledby="tab-register" class="hidden">
+        <p class="muted">Alla kan titta på klippen. För att ladda upp egna klipp skapar du ett konto. Kontot godkänns av administratören innan du kan logga in.</p>
+        <div class="field">
+          <label for="reg-email">E-postadress</label>
+          <input id="reg-email" name="email" type="email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label for="reg-pin">Välj pinkod</label>
+          <input id="reg-pin" name="pin" type="password" autocomplete="new-password" minlength="8" maxlength="8" pattern="[A-Za-z0-9]{8}" required>
+          <div class="hint">Exakt 8 tecken – bokstäver (A–Z) och/eller siffror.</div>
+        </div>
+        <div class="field">
+          <label for="reg-pin2">Upprepa pinkod</label>
+          <input id="reg-pin2" name="pin2" type="password" autocomplete="new-password" minlength="8" maxlength="8" required>
+        </div>
+        <div id="register-msg"></div>
+        <button class="btn" type="submit">Skicka för godkännande</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
