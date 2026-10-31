@@ -79,18 +79,54 @@ docker compose logs -f app
 
 Om brandväggen ufw används: `sudo ufw allow 80,443/tcp`.
 
-Databasen och filmerna sparas i `./data` (bredvid `docker-compose.yml`). Säkerhetskopiera den katalogen,
-t.ex. nattligt via `crontab -e`:
+### Uppdatera utan att förlora data
 
-```
-0 3 * * * tar czf /var/backups/floorballflash-$(date +\%F).tar.gz -C /raid_storage/floorballflash data
-```
-
-Uppdatera till senaste versionen:
+Databasen och filmklippen ligger i datakatalogen (`DATA_PATH`, standard `./data`). Uppdateringar
+rör bara koden och containern, aldrig datakatalogen. Uppdatera med skriptet:
 
 ```bash
-cd /raid_storage/floorballflash && git pull && docker compose up -d --build
+cd /raid_storage/floorballflash && ./scripts/update.sh
 ```
+
+Det tar en säkerhetskopia av databasen (i `DATA_PATH/backups`), avbryter om koden har lokala
+ändringar, hämtar ny kod med `git pull --ff-only`, bygger om och kontrollerar sedan att appen svarar
+och att inga klippfiler har försvunnit. Nya versioner ändrar databasen bara genom att lägga till
+tabeller och kolumner, aldrig genom att ta bort.
+
+**Lägg datakatalogen utanför kodmappen** så kan ingenting som görs med koden (`git clean`, en ny
+`git clone`, att kodmappen tas bort) nå klippen. En gång:
+
+```bash
+cd /raid_storage/floorballflash
+docker compose down
+sudo mv data /raid_storage/floorballflash-data
+echo "DATA_PATH=/raid_storage/floorballflash-data" >> .env
+docker compose up -d
+```
+
+**Kommandon som raderar data** – kör dem inte i kodmappen så länge datan ligger där:
+
+| Kommando | Vad som försvinner |
+|---|---|
+| `git clean -x`, `git clean -fdx` | `data/` (den är ignorerad av git och räknas som skräp) |
+| `rm -rf` på kodmappen eller ny `git clone` över den | allt i `data/` |
+| `docker compose down -v` | Caddys certifikat (inte klippen, men nya certifikat måste hämtas) |
+
+Vanliga `git pull`, `docker compose up -d --build`, `docker compose down`, `restart` och
+`docker system prune` rör inte datakatalogen.
+
+### Säkerhetskopiering
+
+`docker compose exec app npm run backup` tar en säker kopia av databasen medan appen körs (de 20
+senaste sparas i `DATA_PATH/backups`). Filmklippen ändras aldrig efter uppladdning och kopieras enklast
+med `rsync`. Kopiera till en annan disk eller maskin, t.ex. nattligt via `crontab -e`:
+
+```
+0 3 * * * cd /raid_storage/floorballflash && docker compose exec -T app npm run -s backup && rsync -a /raid_storage/floorballflash-data/ /mnt/backup/floorballflash/
+```
+
+`rsync` utan `--delete` behåller även klipp som tagits bort på sidan. RAID skyddar mot en trasig disk,
+men inte mot att något raderas – därför en kopia på ett annat ställe.
 
 Utan Caddy går det också att köra bara appen (`docker build -t floorballflash . && docker run -d
 -p 3000:3000 -v floorballflash-data:/data --env-file .env floorballflash`), men lägg då en
