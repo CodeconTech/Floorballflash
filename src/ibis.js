@@ -157,6 +157,45 @@ function involvesTeam(m, teamId) {
 
 let schedule = { at: 0, key: '', matches: [], source: '', error: null };
 let workingTeamPath = null;
+const discovered = new Map(); // "seasonId/teamId" -> competition IDs found via the team endpoints
+
+/** Collects values of keys named like `key` (case-insensitive) anywhere in a JSON value. */
+function collect(value, key, out = new Set()) {
+  if (Array.isArray(value)) value.forEach((v) => collect(v, key, out));
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      if (k.toLowerCase() === key && Number.isInteger(v) && v > 0) out.add(v);
+      else collect(v, key, out);
+    }
+  }
+  return out;
+}
+
+/**
+ * Finds the competitions (series) a team plays in from the documented team endpoints
+ * (api/seasons/{seasonID}/teams/{teamID} and api/teams/{teamID}).
+ */
+async function discoverCompetitions(s, errors) {
+  const cacheKey = `${s.seasonId}/${s.teamId}`;
+  if (discovered.has(cacheKey)) return discovered.get(cacheKey);
+  const ids = new Set();
+  for (const p of [`${ROOT}/seasons/${s.seasonId}/teams/${s.teamId}`, `${ROOT}/teams/${s.teamId}`]) {
+    try {
+      const team = await request(p);
+      collect(team, 'competitionid', ids);
+      if (ids.size) {
+        console.log('[ibis] lag %s spelar i serie %s (från %s)', s.teamId, [...ids].join(', '), p);
+        break;
+      }
+      console.warn('[ibis] %s gav inget serie-ID. Fält i svaret: %s', p, team && typeof team === 'object' ? Object.keys(team).join(', ') : typeof team);
+    } catch (err) {
+      errors.push(err.message);
+    }
+  }
+  const list = [...ids];
+  if (list.length) discovered.set(cacheKey, list);
+  return list;
+}
 
 /**
  * Collects the team's fixtures. IBIS has no documented "matches for team" endpoint in the
@@ -204,7 +243,11 @@ async function fetchSchedule() {
     }
   }
 
-  for (const cid of s.competitionIds) {
+  // Without a team schedule endpoint, use the team's own competitions plus configured ones.
+  const competitionIds = new Set(s.competitionIds);
+  if (!byId.size) for (const cid of await discoverCompetitions(s, errors)) competitionIds.add(cid);
+
+  for (const cid of competitionIds) {
     try {
       const list = await request(`${ROOT}/competitions/${cid}/matches`);
       add((list || []).filter((m) => involvesTeam(m, s.teamId)), `serie ${cid}`);
@@ -222,7 +265,9 @@ async function fetchSchedule() {
     }
   }
 
-  if (!byId.size && errors.length) throw new Error(errors.join('; '));
+  if (!byId.size && errors.length) {
+    throw new Error(`${errors.join('; ')}. Ange lagets serie-ID på adminsidan (Lag och datakälla).`);
+  }
   return { matches: [...byId.values()], source: sources.join(', ') };
 }
 
@@ -289,4 +334,4 @@ async function getMatch(matchId, { live = true, maxAgeMs = 10000 } = {}) {
   return match;
 }
 
-module.exports = { getSchedule, getMatch, normalizeMatch, STATUS_TEXT };
+module.exports = { getSchedule, getMatch, normalizeMatch, request, collect, ROOT, STATUS_TEXT };
