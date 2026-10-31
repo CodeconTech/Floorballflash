@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "IBIS_MOCK=1 node --disable-warning=ExperimentalWarning src/server.js",
+    "ibis-check": "node --disable-warning=ExperimentalWarning src/ibis-check.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
   },
   "repository": {

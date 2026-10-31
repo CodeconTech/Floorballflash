@@ -92,6 +92,29 @@ Utan Caddy går det också att köra bara appen (`docker build -t floorballflash
 -p 3000:3000 -v floorballflash-data:/data --env-file .env floorballflash`), men lägg då en
 HTTPS-proxy framför och sätt `TRUST_PROXY` till antalet proxy-hopp.
 
+### Felsökning
+
+**Spelprogrammet är tomt.** Kör diagnosen på servern; den visar vilka API-adresser som svarar för laget
+och vilka serie-ID:n som hittas:
+
+```bash
+docker compose exec app npm run ibis-check
+```
+
+Hittas inget serie-ID automatiskt anger du det på adminsidan under *Lag och datakälla*.
+
+**HTTPS-certifikatet fungerar inte.** Titta i Caddys logg: `docker compose logs caddy --tail 100`.
+Vanliga orsaker:
+
+- DNS pekar inte på servern ännu – jämför `dig +short DOMÄN` med `curl -4 ifconfig.me`. En gammal
+  AAAA-post (IPv6) som pekar någon annanstans räcker för att det ska misslyckas.
+- Port 80 eller 443 når inte servern – brandväggen (`sudo ufw status`), molnleverantörens
+  säkerhetsgrupp eller portvidarebefordran i routern om servern står hemma.
+- Domänen ligger bakom Cloudflares proxy (orange moln) – stäng av proxyn, eller sätt SSL-läget till *Full*.
+- Något annat lyssnar redan på port 80/443 (t.ex. nginx eller apache) – `sudo ss -ltnp | grep -E ':(80|443) '`.
+
+När felet är åtgärdat: `docker compose restart caddy`.
+
 ## Datakälla
 
 Data hämtas från IBIS-API:t på `api.innebandy.se`:
@@ -101,9 +124,10 @@ Data hämtas från IBIS-API:t på `api.innebandy.se`:
 - `/v2/api/public/competitions/{id}/matches` – alla matcher i en serie.
 
 API:t saknar dokumenterad ändpunkt för ett lags spelprogram. Servern provar därför
-`/v2/api/public/seasons/{seasonId}/teams/{teamId}/matches` och `/v2/api/public/teams/{teamId}/matches`,
-och kompletterar med matcher från de **serie-ID:n** som anges på adminsidan (filtrerade på laget)
-samt eventuella extra match-ID:n. Om spelprogrammet blir tomt: ange lagets serie-ID:n på adminsidan
+`/v2/api/public/seasons/{seasonId}/teams/{teamId}/matches` och `/v2/api/public/teams/{teamId}/matches`.
+Svarar ingen av dem läses lagets serier ut från `/v2/api/public/seasons/{seasonId}/teams/{teamId}`
+(eller `/v2/api/public/teams/{teamId}`), och seriernas matcher filtreras på laget. Matcher från de
+**serie-ID:n** som anges på adminsidan och eventuella extra match-ID:n läggs också till. Om spelprogrammet blir tomt: ange lagets serie-ID:n på adminsidan
 (syns i adressen på seriens sida på stats.innebandy.se), eller en egen API-sökväg.
 
 ## Tester
