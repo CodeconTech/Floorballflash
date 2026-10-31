@@ -62,8 +62,10 @@ async function request(path, { auth = false } = {}) {
     return fetch(`${config.ibis.baseUrl}${path}`, { headers, signal: AbortSignal.timeout(15000) });
   };
   let res = await doFetch();
-  if (res.status === 401 && auth) {
-    token = null;
+  if (res.status === 401) {
+    // Some public endpoints (e.g. teams) need the anonymous startkit token too.
+    if (auth) token = null;
+    auth = true;
     res = await doFetch();
   }
   if (!res.ok) {

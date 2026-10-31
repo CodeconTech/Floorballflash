@@ -112,8 +112,8 @@ function getTeamSettings() {
   return {
     teamId: getSetting('teamId', config.teamId),
     seasonId: getSetting('seasonId', config.seasonId),
-    competitionIds: getSetting('competitionIds', []),
-    extraMatchIds: getSetting('extraMatchIds', []),
+    competitionIds: [...new Set([...config.competitionIds, ...getSetting('competitionIds', [])])],
+    extraMatchIds: [...new Set([...config.extraMatchIds, ...getSetting('extraMatchIds', [])])],
     teamMatchesPath: getSetting('teamMatchesPath', ''),
   };
 }

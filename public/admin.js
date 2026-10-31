@@ -147,7 +147,9 @@
   }
 
   async function loadSettings() {
-    const { settings, mock } = await api('/api/admin/settings');
+    const { settings, fromEnv, mock } = await api('/api/admin/settings');
+    $('env-comp').textContent = fromEnv.competitionIds.length ? `Från .env (COMPETITION_IDS), tas alltid med: ${fromEnv.competitionIds.join(', ')}` : '';
+    $('env-extra').textContent = fromEnv.extraMatchIds.length ? `Från .env (EXTRA_MATCH_IDS), tas alltid med: ${fromEnv.extraMatchIds.join(', ')}` : '';
     const f = $('settings-form');
     f.teamId.value = settings.teamId;
     f.seasonId.value = settings.seasonId;

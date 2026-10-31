@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const config = require('../config');
-const { db, getTeamSettings, setSetting } = require('../db');
+const { db, getSetting, getTeamSettings, setSetting } = require('../db');
 const { sendMail } = require('../mailer');
 const ibis = require('../ibis');
 const auth = require('../auth');
@@ -146,7 +146,13 @@ router.delete('/api/admin/users/:id', (req, res) => {
 });
 
 router.get('/api/admin/settings', (req, res) => {
-  res.json({ settings: getTeamSettings(), mock: config.ibis.mock });
+  // The form edits only what is stored here; IDs from .env are always added on top.
+  const settings = { ...getTeamSettings(), competitionIds: getSetting('competitionIds', []), extraMatchIds: getSetting('extraMatchIds', []) };
+  res.json({
+    settings,
+    fromEnv: { competitionIds: config.competitionIds, extraMatchIds: config.extraMatchIds },
+    mock: config.ibis.mock,
+  });
 });
 
 function idList(value) {

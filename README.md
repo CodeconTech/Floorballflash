@@ -101,7 +101,8 @@ och vilka serie-ID:n som hittas:
 docker compose exec app npm run ibis-check
 ```
 
-Hittas inget serie-ID automatiskt anger du det på adminsidan under *Lag och datakälla*.
+Hittas inget serie-ID automatiskt anger du serierna i `.env` (`COMPETITION_IDS=45219,45220`, följt av
+`docker compose up -d`) eller på adminsidan under *Lag och datakälla*.
 
 **HTTPS-certifikatet fungerar inte.** Titta i Caddys logg: `docker compose logs caddy --tail 100`.
 Vanliga orsaker:
