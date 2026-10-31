@@ -11,6 +11,7 @@
 const config = require('./config');
 const { getTeamSettings } = require('./db');
 const mock = require('./ibis-mock');
+const archive = require('./archive');
 
 const ROOT = '/v2/api/public';
 const HEADERS = {
@@ -287,6 +288,7 @@ async function getSchedule({ force = false } = {}) {
       if (known && known.at > Date.now() - 120000) Object.assign(m, pickScore(known.match));
     }
     schedule = { at: Date.now(), key, matches: normalized, source, error: null, teamId: s.teamId, seasonId: s.seasonId };
+    archive.rememberAll(normalized);
   } catch (err) {
     console.error('[ibis] kunde inte hämta spelprogram:', err.message);
     schedule = { ...schedule, at: Date.now() - (config.ibis.scheduleCacheSeconds - 20) * 1000, key, error: err.message };
@@ -308,31 +310,60 @@ function pickScore(m) {
   };
 }
 
+const MAX_CACHED = 500;
+const misses = new Map(); // matchId -> time of a failed lookup, so unknown IDs aren't re-fetched constantly
+
+function cacheMatch(matchId, match) {
+  liveCache.delete(matchId);
+  liveCache.set(matchId, { at: Date.now(), match });
+  // Map keeps insertion order, so the first keys are the least recently fetched.
+  for (const key of liveCache.keys()) {
+    if (liveCache.size <= MAX_CACHED) break;
+    liveCache.delete(key);
+  }
+}
+
+async function fetchRaw(matchId, live) {
+  if (config.ibis.mock) {
+    const raw = mock.match(matchId, getTeamSettings().teamId);
+    if (!raw) throw Object.assign(new Error('Matchen finns inte'), { status: 404 });
+    return raw;
+  }
+  try {
+    return await request(`${ROOT}/matches/${matchId}`, { auth: live });
+  } catch (err) {
+    // If the token flow is down, public data is still better than nothing.
+    if (!live || err.status === 404) throw err;
+    return request(`${ROOT}/matches/${matchId}`);
+  }
+}
+
 /** Fetches one match. `live` attaches the startkit token so ongoing events are included. */
 async function getMatch(matchId, { live = true, maxAgeMs = 10000 } = {}) {
   const cached = liveCache.get(matchId);
   if (cached && Date.now() - cached.at < maxAgeMs) return cached.match;
+  const missedAt = misses.get(matchId);
   let raw;
-  if (config.ibis.mock) {
-    raw = mock.match(matchId, getTeamSettings().teamId);
-    if (!raw) {
-      const err = new Error('Matchen finns inte');
-      err.status = 404;
-      throw err;
+  try {
+    if (missedAt && Date.now() - missedAt < 60000) throw Object.assign(new Error('Matchen finns inte'), { status: 404 });
+    raw = await fetchRaw(matchId, live);
+    misses.delete(matchId);
+  } catch (err) {
+    if (err.status === 404 && (!missedAt || Date.now() - missedAt >= 60000)) {
+      misses.set(matchId, Date.now());
+      if (misses.size > MAX_CACHED) misses.delete(misses.keys().next().value);
     }
-  } else {
-    try {
-      raw = await request(`${ROOT}/matches/${matchId}`, { auth: live });
-    } catch (err) {
-      // If the token flow is down, public data is still better than nothing.
-      if (!live || err.status === 404) throw err;
-      raw = await request(`${ROOT}/matches/${matchId}`);
-    }
+    // Played matches stay viewable from the archive when IBIS no longer returns them.
+    const stored = archive.get(matchId);
+    if (stored) return stored;
+    throw err;
   }
   const match = normalizeMatch(raw);
-  liveCache.set(matchId, { at: Date.now(), match });
+  cacheMatch(matchId, match);
   const inSchedule = schedule.matches.find((m) => m.id === matchId);
   if (inSchedule) Object.assign(inSchedule, pickScore(match));
+  // Only the team's own matches are archived, so looking up arbitrary IDs can't fill the database.
+  if (inSchedule || archive.has(matchId)) archive.remember(match);
   return match;
 }
 

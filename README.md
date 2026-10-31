@@ -15,11 +15,15 @@ liveuppdateringar under matcherna och filmklipp som godkända användare laddar 
   (`?view=…`) och sändningslänk (`?push=…`) går att klistra in – besökarna får alltid bara
   visningslänken. Den som kopplat sändningen (och admin) ser länken för kameran och kan byta eller
   ta bort sändningen.
-- **Filmklipp** – inloggade användare laddar upp klipp (mp4, mov, m4v, webm, ogv) till en match.
+- **Filmklipp** – inloggade användare laddar upp klipp (mp4, mov, m4v, webm, ogv) till en match,
+  fram till 12 timmar efter matchen (`UPLOAD_WINDOW_HOURS`; admin kan alltid ladda upp).
   Alla besökare kan titta, utan inloggning.
+- **Tidigare matcher** – spelade matcher listas med resultat och klipp. Matcher sparas i databasen,
+  så matcher med klipp finns kvar även när de inte längre ingår i spelprogrammet (t.ex. förra säsongen).
 - **Inloggning med e-post och pinkod** – pinkoden är exakt 8 tecken (bokstäver/siffror).
   Nya konton måste godkännas: ett mejl med knapparna *Godkänn användare* och *Neka användare* skickas
-  till administratören (`ADMIN_EMAIL`, standard andreas.wallin@gmail.com). Användaren får besked via mejl.
+  till administratören (`ADMIN_EMAIL`, standard andreas.wallin@gmail.com). Länken gäller i 90 dagar
+  (`APPROVAL_LINK_DAYS`); därefter godkänns användaren på adminsidan. Användaren får besked via mejl.
 - **Adminsida** (`/admin.html`) – administratören loggar in med samma e-postadress och ett starkt
   lösenord (minst 12 tecken, tre teckentyper). Lösenordet skapas/återställs via en engångslänk
   som mejlas till administratörsadressen, så ingen annan kan ta över kontot. På adminsidan kan man

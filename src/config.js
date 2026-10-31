@@ -26,6 +26,10 @@ module.exports = {
     ? process.env.COOKIE_SECURE === '1' || process.env.COOKIE_SECURE === 'true'
     : (process.env.PUBLIC_URL || '').startsWith('https://'),
   sessionDays: int(process.env.SESSION_DAYS, 30),
+  // How long the approve/deny link mailed to the admin stays valid.
+  approvalLinkDays: Math.max(1, int(process.env.APPROVAL_LINK_DAYS, 90)),
+  // Clips can be uploaded until this many hours after a match has been played.
+  uploadWindowHours: Math.max(1, int(process.env.UPLOAD_WINDOW_HOURS, 12)),
 
   // Default team/season, overridable from the admin page.
   teamId: int(process.env.TEAM_ID, 120879),

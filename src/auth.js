@@ -143,9 +143,10 @@ function csrfGuard(req, res, next) {
 
 // Simple in-memory per-IP limiter for auth endpoints.
 const buckets = new Map();
-function rateLimit({ windowMs, max }) {
+function rateLimit({ windowMs, max, name }) {
   return (req, res, next) => {
-    const key = `${req.baseUrl}${req.path}|${req.ip}`;
+    // Named limiters share one bucket per IP across all routes they guard.
+    const key = name ? `${name}|${req.ip}` : `${req.baseUrl}${req.path}|${req.ip}`;
     const now = Date.now();
     const b = buckets.get(key);
     if (!b || b.reset < now) buckets.set(key, { count: 1, reset: now + windowMs });

@@ -23,9 +23,11 @@ function escapeHtml(s) {
 
 /**
  * Sends a mail. `links` is an optional list of { label, url, color } rendered as buttons
- * in the HTML part and as plain URLs in the text part.
+ * in the HTML part and as plain URLs in the text part. `secrets` (tokens, PINs) are masked
+ * in the mail log once the mail has been delivered; without SMTP the log is the only way to
+ * reach them, so they are kept there.
  */
-async function sendMail({ to, subject, text, links = [] }) {
+async function sendMail({ to, subject, text, links = [], secrets = [] }) {
   const textBody = [text, ...links.map((l) => `${l.label}: ${l.url}`)].join('\n\n');
   const html = `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111">
     ${text.split('\n').map((line) => `<p style="margin:0 0 10px">${escapeHtml(line)}</p>`).join('')}
@@ -50,9 +52,10 @@ async function sendMail({ to, subject, text, links = [] }) {
   } else {
     console.log('[mail] Till: %s\n[mail] Ämne: %s\n%s\n', to, subject, textBody);
   }
+  const logged = status === 'sent' ? secrets.reduce((body, s) => body.replaceAll(s, '[dold]'), textBody) : textBody;
   db.prepare(
     'INSERT INTO mail_log (recipient, subject, body, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(to, subject, textBody, status, error, Date.now());
+  ).run(to, subject, logged, status, error, Date.now());
   return status;
 }
 

@@ -79,9 +79,8 @@ test('register, approve by mail link, log in and upload a clip everyone can see'
 
   const fd = new FormData();
   fd.append('title', 'Mål i första');
-  fd.append('matchId', '7000105');
   fd.append('video', new Blob([Buffer.alloc(1024)], { type: 'video/mp4' }), 'klipp.mp4');
-  res = await call('/api/videos', { method: 'POST', body: fd, cookie });
+  res = await call('/api/videos?match=7000105', { method: 'POST', body: fd, cookie });
   assert.equal(res.status, 201);
   const { video } = await res.json();
 
@@ -96,9 +95,8 @@ test('register, approve by mail link, log in and upload a clip everyone can see'
 test('uploads require login and a video file', async () => {
   const fd = new FormData();
   fd.append('title', 'x');
-  fd.append('matchId', '1');
   fd.append('video', new Blob(['hej'], { type: 'text/html' }), 'x.html');
-  assert.equal((await call('/api/videos', { method: 'POST', body: fd })).status, 401);
+  assert.equal((await call('/api/videos?match=7000105', { method: 'POST', body: fd })).status, 401);
 });
 
 test('state-changing API calls need the CSRF header', async () => {
@@ -188,4 +186,57 @@ test('approved users attach a live stream that everyone sees', async () => {
   res = await call('/api/matches/7000106/stream', { method: 'DELETE', cookie });
   assert.equal(res.status, 200);
   assert.equal((await (await call('/api/matches/7000106/stream')).json()).stream, null);
+});
+
+test('clip uploads close 12 hours after the match, except for the admin', async () => {
+  const pin = 'Sen12Tim';
+  await call('/api/auth/register', { method: 'POST', body: { email: 'sen@exempel.se', pin } });
+  db.prepare("UPDATE users SET status = 'approved' WHERE email = 'sen@exempel.se'").run();
+  const cookie = cookieOf(await call('/api/auth/login', { method: 'POST', body: { email: 'sen@exempel.se', pin } }));
+  const clip = () => {
+    const fd = new FormData();
+    fd.append('title', 'Sent klipp');
+    fd.append('video', new Blob([Buffer.alloc(64)], { type: 'video/mp4' }), 'sent.mp4');
+    return fd;
+  };
+
+  // A played match from the mock schedule; pretend it started 15 hours ago.
+  const id = 7000104;
+  await call(`/api/matches/${id}`);
+  const started = Date.now() - 15 * 3600000;
+  db.prepare('UPDATE matches SET start_at = ?, finished_at = NULL WHERE match_id = ?').run(started, id);
+  const { upload } = await (await call(`/api/matches/${id}`)).json();
+  assert.equal(upload.open, false);
+  assert.equal(upload.deadline, started + 14 * 3600000, 'start + 2 h match + 12 h');
+
+  let res = await call(`/api/videos?match=${id}`, { method: 'POST', body: clip(), cookie });
+  assert.equal(res.status, 403);
+
+  const admin = cookieOf(await call('/api/admin/login', { method: 'POST', body: { email: 'andreas.wallin@gmail.com', password: 'Blå-Klubba#2026!' } }));
+  res = await call(`/api/videos?match=${id}`, { method: 'POST', body: clip(), cookie: admin });
+  assert.equal(res.status, 201, 'the admin can still add clips');
+
+  // A match seen finishing recently is still open, whatever its start time.
+  db.prepare('UPDATE matches SET finished_at = ? WHERE match_id = ?').run(Date.now() - 3600000, id);
+  res = await call(`/api/videos?match=${id}`, { method: 'POST', body: clip(), cookie });
+  assert.equal(res.status, 201);
+
+  res = await call('/api/videos?match=999999999', { method: 'POST', body: clip(), cookie });
+  assert.equal(res.status, 404, 'clips must belong to a real match');
+});
+
+test('played matches with clips stay listed after they leave the schedule', async () => {
+  const { db: database } = require('../src/db');
+  const old = { id: 6000001, dateTime: '2025-02-01T18:00:00', status: 4, finished: true, home: { name: 'A' }, away: { name: 'B' } };
+  database.prepare('INSERT INTO matches (match_id, data, start_at, status, updated_at) VALUES (?, ?, ?, 4, ?)').run(old.id, JSON.stringify(old), Date.parse(old.dateTime), Date.now());
+  const { archived: before } = await (await call('/api/schedule')).json();
+  assert.ok(!before.some((m) => m.id === old.id), 'only matches with clips are archived');
+
+  database.prepare("INSERT INTO videos (uploader, match_id, title, filename, mime, size, created_at) VALUES ('x@y.se', ?, 'Gammalt', 'f0000000000000000000000000000000.mp4', 'video/mp4', 1, 0)").run(old.id);
+  const { archived } = await (await call('/api/schedule')).json();
+  assert.ok(archived.some((m) => m.id === old.id));
+  // The match page still works from the archive even though IBIS doesn't know the match.
+  const res = await call(`/api/matches/${old.id}`);
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).match.home.name, 'A');
 });

@@ -15,6 +15,13 @@ const router = express.Router();
 const limiter = auth.rateLimit({ windowMs: 15 * 60000, max: 20 });
 const SETUP_LINK_MINUTES = 60;
 
+// Failed admin logins are counted per IP address. A shared lock on the account would let
+// anyone keep the admin locked out just by guessing wrong now and then.
+const adminFailures = new Map(); // ip -> { count, lockedUntil }
+setInterval(() => {
+  for (const [ip, f] of adminFailures) if (f.lockedUntil < Date.now()) adminFailures.delete(ip);
+}, 15 * 60000).unref();
+
 function adminRow() {
   return db.prepare('SELECT * FROM admin WHERE id = 1').get();
 }
@@ -30,19 +37,18 @@ router.post('/api/admin/login', limiter, async (req, res) => {
   const email = auth.normalizeEmail(req.body.email);
   const password = typeof req.body.password === 'string' ? req.body.password : '';
   const admin = adminRow();
-  if (admin.locked_until && admin.locked_until > Date.now()) {
+  const f = adminFailures.get(req.ip) || { count: 0, lockedUntil: 0 };
+  if (f.lockedUntil > Date.now()) {
     return res.status(429).json({ error: 'För många felaktiga försök. Inloggningen är låst i 15 minuter.' });
   }
   const ok = email === config.adminEmail && (await auth.verify(password, admin.password_hash || auth.dummyHash())) && Boolean(admin.password_hash);
   if (!ok) {
-    const failed = admin.failed_attempts + 1;
-    db.prepare('UPDATE admin SET failed_attempts = ?, locked_until = ? WHERE id = 1').run(
-      failed >= auth.MAX_FAILED ? 0 : failed,
-      failed >= auth.MAX_FAILED ? Date.now() + auth.LOCK_MS : null,
-    );
+    f.count += 1;
+    if (f.count >= auth.MAX_FAILED) Object.assign(f, { count: 0, lockedUntil: Date.now() + auth.LOCK_MS });
+    adminFailures.set(req.ip, f);
     return res.status(401).json({ error: 'Fel e-postadress eller lösenord.' });
   }
-  db.prepare('UPDATE admin SET failed_attempts = 0, locked_until = NULL WHERE id = 1').run();
+  adminFailures.delete(req.ip);
   auth.createSession(res, 'admin');
   res.json({ ok: true });
 });
@@ -66,6 +72,7 @@ router.post('/api/admin/request-password-link', limiter, async (req, res) => {
     subject: 'Skapa lösenord för Floorballflash admin',
     text: `Klicka på länken för att skapa ett nytt adminlösenord. Länken gäller i ${SETUP_LINK_MINUTES} minuter och kan bara användas en gång.\nOm du inte begärde detta kan du ignorera mejlet.`,
     links: [{ label: 'Skapa lösenord', url: `${config.publicUrl}/admin.html#token=${token}` }],
+    secrets: [token],
   });
   res.json({ ok: true, message: `En länk har skickats till ${config.adminEmail}.` });
 });
@@ -134,6 +141,7 @@ router.post('/api/admin/users/:id/reset-pin', async (req, res) => {
     subject: 'Ny pinkod till Floorballflash',
     text: `Administratören har gett dig en ny pinkod: ${pin}\nLogga in med din e-postadress och den nya pinkoden.`,
     links: [{ label: 'Logga in', url: `${config.publicUrl}/login.html` }],
+    secrets: [pin],
   });
   res.json({ ok: true, pin });
 });

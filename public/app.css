@@ -241,3 +241,6 @@ details.mail pre { white-space: pre-wrap; word-break: break-word; font-size: .85
 
 footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 20px; }
 .section-head.flush { margin-top: 0; }
+
+.check { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; font-size: .9rem; color: var(--muted); margin: 0; cursor: pointer; }
+.more { text-align: center; margin-top: 12px; }

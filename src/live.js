@@ -8,7 +8,8 @@
 const config = require('./config');
 const ibis = require('./ibis');
 
-const clients = new Set(); // { res, matchId|null }
+const clients = new Set(); // { res, matchId|null, ip }
+const MAX_STREAMS_PER_IP = 20;
 const lastSent = new Map(); // matchId -> JSON string
 let timer = null;
 
@@ -46,7 +47,10 @@ function summary(m) {
 /** Express handler for GET /api/live[?match=ID] */
 function subscribe(req, res) {
   const matchId = req.query.match ? parseInt(req.query.match, 10) : null;
-  if (req.query.match && !Number.isFinite(matchId)) return res.status(400).end();
+  if (req.query.match && !(matchId > 0)) return res.status(400).end();
+  let open = 0;
+  for (const c of clients) if (c.ip === req.ip) open++;
+  if (open >= MAX_STREAMS_PER_IP) return res.status(429).end();
   res.set({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
@@ -55,7 +59,7 @@ function subscribe(req, res) {
   });
   res.flushHeaders();
   res.write(`retry: 5000\n\n`);
-  const client = { res, matchId };
+  const client = { res, matchId, ip: req.ip };
   clients.add(client);
   const ping = setInterval(() => res.write(': ping\n\n'), 25000);
   req.on('close', () => {
@@ -74,10 +78,12 @@ function matchesToPoll(schedule) {
     const nearStart = Number.isFinite(start) && now > start - 15 * 60000 && now < start + 4 * 3600000;
     if (m.live || nearStart) ids.add(m.id);
   }
+  // Watched matches are polled only if they are part of the schedule, so arbitrary match IDs
+  // in /api/live can't make the server poll IBIS on someone else's behalf.
   for (const c of clients) {
     if (c.matchId === null) continue;
     const known = schedule.matches.find((m) => m.id === c.matchId);
-    if (!known || !known.finished) ids.add(c.matchId);
+    if (known && !known.finished) ids.add(c.matchId);
   }
   return ids;
 }
