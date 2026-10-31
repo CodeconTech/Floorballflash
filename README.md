@@ -63,8 +63,8 @@ curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker $USER        # logga ut och in igen
 
 # 2. Hämta koden och skapa inställningarna
-git clone https://github.com/CodeconTech/Floorballflash.git /opt/floorballflash
-cd /opt/floorballflash
+git clone https://github.com/CodeconTech/Floorballflash.git /raid_storage/floorballflash
+cd /raid_storage/floorballflash
 cp .env.example .env && chmod 600 .env
 nano .env                            # sätt DOMAIN, PUBLIC_URL och SMTP-uppgifter
 
@@ -79,13 +79,13 @@ Databasen och filmerna sparas i `./data` (bredvid `docker-compose.yml`). Säkerh
 t.ex. nattligt via `crontab -e`:
 
 ```
-0 3 * * * tar czf /var/backups/floorballflash-$(date +\%F).tar.gz -C /opt/floorballflash data
+0 3 * * * tar czf /var/backups/floorballflash-$(date +\%F).tar.gz -C /raid_storage/floorballflash data
 ```
 
 Uppdatera till senaste versionen:
 
 ```bash
-cd /opt/floorballflash && git pull && docker compose up -d --build
+cd /raid_storage/floorballflash && git pull && docker compose up -d --build
 ```
 
 Utan Caddy går det också att köra bara appen (`docker build -t floorballflash . && docker run -d
