@@ -84,6 +84,7 @@ const FF = (() => {
     await loadMe();
     nav.replaceChildren(
       el('a', { href: '/' }, 'Spelprogram'),
+      el('a', { href: '/resultat.html' }, 'Resultat'),
       el('a', { href: '/#klipp' }, 'Klipp'),
       me
         ? el('span', { class: 'row' },

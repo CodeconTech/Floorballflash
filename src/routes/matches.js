@@ -5,6 +5,7 @@ const ibis = require('../ibis');
 const live = require('../live');
 const streams = require('../streams');
 const archive = require('../archive');
+const { getTeamSettings } = require('../db');
 
 const router = express.Router();
 
@@ -22,6 +23,13 @@ router.get('/api/schedule', async (req, res) => {
     // Played matches with clips that are no longer part of the schedule (e.g. earlier seasons).
     archived: archive.withVideos(inSchedule),
   });
+});
+
+// Played matches for the results page. Reads the archive, so it works without calling IBIS.
+router.get('/api/results', (req, res) => {
+  const { teamId } = getTeamSettings();
+  res.set('Cache-Control', 'no-cache');
+  res.json({ teamId, matches: archive.played() });
 });
 
 router.get('/api/matches/:id', async (req, res) => {

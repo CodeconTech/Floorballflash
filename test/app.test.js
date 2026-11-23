@@ -240,3 +240,12 @@ test('played matches with clips stay listed after they leave the schedule', asyn
   assert.equal(res.status, 200);
   assert.equal((await res.json()).match.home.name, 'A');
 });
+
+test('the results page lists played matches from the archive', async () => {
+  const { matches, teamId } = await (await call('/api/results')).json();
+  assert.equal(teamId, 120879);
+  assert.ok(matches.length > 0);
+  assert.ok(matches.every((m) => m.status !== 1 || Date.parse(m.dateTime) < Date.now()), 'only played matches');
+  const dates = matches.map((m) => m.dateTime).filter(Boolean);
+  assert.deepEqual(dates, [...dates].sort().reverse(), 'newest first');
+});

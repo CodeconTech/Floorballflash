@@ -82,4 +82,16 @@ function withVideos(excludeIds) {
     .filter((m) => !excludeIds.has(m.id));
 }
 
-module.exports = { remember, rememberAll, has, get, uploadWindow, withVideos, MATCH_LENGTH_MS };
+const PLAYED_AFTER_MS = 3 * 3600000; // a match without a reported result counts as played after this
+
+/** All archived matches that have been played, newest first. */
+function played() {
+  const now = Date.now();
+  return db
+    .prepare('SELECT data, start_at, status FROM matches ORDER BY start_at DESC, match_id DESC')
+    .all()
+    .filter((r) => r.status === 4 || (r.start_at && r.start_at + PLAYED_AFTER_MS < now && r.status !== 2 && r.status !== 3))
+    .map((r) => JSON.parse(r.data));
+}
+
+module.exports = { played, remember, rememberAll, has, get, uploadWindow, withVideos, MATCH_LENGTH_MS };
