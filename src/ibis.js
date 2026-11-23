@@ -68,7 +68,7 @@ function pauseIfDown(status) {
 /** `force` skips the pause (used by the diagnostics script). */
 async function request(path, { auth = false, force = false } = {}) {
   if (!force && Date.now() < pausedUntil) {
-    throw Object.assign(new Error(`IBIS ${path}: API:t svarar inte, nytt försök om en stund`), { status: 503 });
+    throw Object.assign(new Error(`IBIS ${path}: API:t svarar inte, nytt försök om en stund`), { status: 503, paused: true });
   }
   const doFetch = async () => {
     const headers = { ...HEADERS };
@@ -289,7 +289,8 @@ async function fetchSchedule() {
   }
 
   if (!byId.size && errors.length) {
-    console.error('[ibis] %s', errors.join('; '));
+    // While calls are paused there is nothing new to report.
+    if (!errors.every((e) => e.includes('nytt försök om en stund'))) console.error('[ibis] %s', errors.join('; '));
     throw new Error('Innebandyförbundets API går inte att nå. Importera spelprogrammet på adminsidan.');
   }
   return { matches: [...byId.values()], source: sources.join(', ') };

@@ -9,6 +9,7 @@ liveuppdateringar under matcherna och filmklipp som godkända användare laddar 
 - **Spelprogram och resultat** – kommande matcher, pågående matcher och resultat.
 - **Live** – servern hämtar pågående matcher var 20:e sekund och skickar ändringar direkt till
   webbläsaren (Server-Sent Events). Matchsidan visar ställning, periodresultat, mål och utvisningar.
+- **Automatiska resultat och liveställning** från lagets kanal på play.innebandy.se (`SOLIDSPORT_CHANNEL`).
 - **Liverapportering** – under matchen kan inloggade användare rapportera start, mål (med målskytt),
   periodpauser och slut direkt från matchsidan i mobilen. Ställning och händelser uppdateras live för
   alla som följer matchen. Rapportering är öppen från två timmar före start till sex timmar efter.
@@ -188,16 +189,22 @@ När felet är åtgärdat: `docker compose restart caddy`.
 
 ## Datakälla
 
-**Import (rekommenderat).** Sedan november 2026 kräver innebandyförbundets API (`api.innebandy.se`)
-signerade anrop från stats.innebandy.se och kan inte användas av andra sidor. Matcherna läggs därför
-in genom att kopiera lagets spelprogram från stats.innebandy.se och klistra in det på adminsidan
-(*Importera spelprogram*). Appen läser ut serie, datum, tid, lag, resultat och hall och sparar matcherna;
-samma match uppdateras vid nästa import. Under *Matcher* på adminsidan kan resultat och status ändras
-för hand, t.ex. för att uppdatera ställningen live under en match.
+**play.innebandy.se (automatiskt).** Med `SOLIDSPORT_CHANNEL` i `.env` (lagets kanal, t.ex.
+`holmsund-city-ibc-p14` från play.innebandy.se/holmsund-city-ibc-p14) hämtas spelprogram, resultat och
+liveställning automatiskt från förbundets sändningssajt (Solidsport). Kanalen listar alla lagets matcher
+med resultat, även de som inte sänds. Den läses var tionde minut och var trettionde sekund när en match
+pågår eller snart börjar; ändringar skickas direkt till besökarna.
 
-**IBIS-API:t.** Koden för API:t finns kvar och används om det går att nå (t.ex. med ett avtal om
-[iBIS API-tjänst](https://www.innebandy.se/ibis-play/ibis-api-tjanst)). Svarar det med fel pausas anropen
-i tio minuter. `docker compose exec app npm run ibis-check` visar vilka adresser som svarar.
+**Import från stats.innebandy.se.** Lagets spelprogram kan också klistras in på adminsidan
+(*Importera spelprogram*). Det är förbundets officiella data: tider och lagnamn därifrån behålls, och
+ett slutresultat därifrån ändras inte av play.innebandy.se. Samma match från båda källorna slås ihop.
+
+**Liverapportering och manuella ändringar.** Saknar play.innebandy.se liveställning för en match kan
+den rapporteras från matchsidan; resultat kan rättas på adminsidan under *Matcher*.
+
+**IBIS-API:t.** Sedan november 2026 kräver förbundets API (`api.innebandy.se`) signerade anrop från
+stats.innebandy.se och kan inte användas av andra sidor. Koden finns kvar och används om det går att
+nå (t.ex. med ett avtal om [iBIS API-tjänst](https://www.innebandy.se/ibis-play/ibis-api-tjanst)).
 
 ## Tester
 

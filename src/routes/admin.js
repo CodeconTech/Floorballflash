@@ -162,6 +162,7 @@ router.get('/api/admin/settings', (req, res) => {
   res.json({
     settings,
     fromEnv: { competitionIds: config.competitionIds, extraMatchIds: config.extraMatchIds },
+    solidsport: require('../solidsport').status(),
     mock: config.ibis.mock,
   });
 });
@@ -210,6 +211,17 @@ router.delete('/api/admin/videos/:id', (req, res) => {
 router.post('/api/admin/import', express.json({ limit: '1mb' }), async (req, res) => {
   const { teamId } = getTeamSettings();
   const { matches, skipped } = importer.parse(req.body.tokens, { teamId });
+  // A game already added from play.innebandy.se keeps its ID (and clips); the pasted,
+  // official data updates it instead of adding a duplicate.
+  const synced = archive.imported().filter((x) => x.source === 'solidsport');
+  for (const m of matches) {
+    if (archive.has(m.id)) continue;
+    const twin = synced.find((x) => archive.sameGame(x, m));
+    if (!twin) continue;
+    Object.assign(m, { id: twin.id, solidsport: twin.solidsport, broadcastUrl: twin.broadcastUrl, events: twin.events || [] });
+    if (twin.report) m.report = twin.report;
+    synced.splice(synced.indexOf(twin), 1);
+  }
   if (!matches.length) {
     return res.status(400).json({ error: 'Hittade inga matcher i det inklistrade. Kopiera hela spelprogrammet från stats.innebandy.se.' });
   }

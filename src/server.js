@@ -56,6 +56,14 @@ if (require.main === module) {
     console.log(`Administratör: ${config.adminEmail}`);
   });
   live.start();
+  // Schedule, results and live scores from play.innebandy.se (when SOLIDSPORT_CHANNEL is set).
+  const ibis = require('./ibis');
+  require('./solidsport').start({
+    onChange: async (changed) => {
+      await ibis.getSchedule({ force: true });
+      for (const m of changed) live.broadcast(m);
+    },
+  });
 }
 
 module.exports = app;
