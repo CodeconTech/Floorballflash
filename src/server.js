@@ -27,7 +27,9 @@ app.use((req, res, next) => {
 // Every API call can reach IBIS or the database, so cap how fast one address may call it.
 app.use('/api', auth.rateLimit({ windowMs: 60000, max: 300, name: 'api' }));
 
-app.use(express.json({ limit: '20kb' }));
+// The schedule import parses its own (larger) body.
+const json = express.json({ limit: '20kb' });
+app.use((req, res, next) => (req.path === '/api/admin/import' ? next() : json(req, res, next)));
 app.use(auth.loadSession);
 app.use(auth.csrfGuard);
 

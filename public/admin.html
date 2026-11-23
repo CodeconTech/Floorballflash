@@ -72,6 +72,30 @@
     </section>
 
     <section class="card">
+      <h2>Importera spelprogram</h2>
+      <p class="muted">Innebandyförbundets API går inte längre att använda härifrån. Hämta i stället matcherna så här:</p>
+      <ol class="steps">
+        <li>Öppna lagets spelprogram på <a href="https://stats.innebandy.se/" target="_blank" rel="noopener">stats.innebandy.se</a> (t.ex. /sasong/44/lag/120879/spelprogram).</li>
+        <li>Markera alla matcher, från första serierubriken till sista matchen, och kopiera (Ctrl+C / ⌘C).</li>
+        <li>Klicka i rutan nedan och klistra in (Ctrl+V / ⌘V). Kontrollera förhandsvisningen och spara.</li>
+      </ol>
+      <div id="paste-box" class="paste-box" contenteditable="true" role="textbox" aria-label="Klistra in spelprogrammet här" data-placeholder="Klistra in spelprogrammet här"></div>
+      <div id="import-msg"></div>
+      <div id="import-preview"></div>
+      <p class="hint">Samma match uppdateras vid nästa import, så klistra gärna in hela spelprogrammet igen efter varje matchdag för att få med nya resultat.</p>
+    </section>
+
+    <section class="card">
+      <h2>Matcher</h2>
+      <p class="muted">Ändra resultat och status för hand, t.ex. för att rätta en match eller uppdatera ställningen under pågående match (syns live för besökarna).</p>
+      <div id="matches-msg"></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Datum</th><th>Match</th><th>Hemma</th><th>Borta</th><th>Status</th><th></th></tr></thead>
+        <tbody id="matches"></tbody>
+      </table></div>
+    </section>
+
+    <section class="card">
       <h2>Lag och datakälla</h2>
       <p class="muted">Spelprogrammet hämtas från innebandyförbundets API (samma som stats.innebandy.se). Lag- och säsongs-ID finns i adressen, t.ex. <code>stats.innebandy.se/sasong/<b>44</b>/lag/<b>120879</b>/spelprogram</code>.</p>
       <form id="settings-form">

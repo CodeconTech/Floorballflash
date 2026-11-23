@@ -262,3 +262,13 @@ select { width: auto; }
 .res-F { background: var(--danger); }
 .result-row .when { font-size: .78rem; }
 .periods-small { font-size: .72rem; font-weight: 500; color: var(--muted); }
+
+/* admin: schedule import */
+.steps { padding-left: 20px; margin: 0 0 12px; }
+.steps li { margin-bottom: 4px; }
+.paste-box { min-height: 90px; max-height: 160px; overflow: auto; padding: 12px; border: 2px dashed var(--border); border-radius: 10px; background: var(--surface-2); color: var(--muted); font-size: .85rem; }
+.paste-box:focus { outline: 2px solid var(--brand); border-color: transparent; }
+.paste-box:empty::before { content: attr(data-placeholder); }
+.goal-input { width: 52px !important; padding: 6px !important; text-align: center; }
+td select { padding: 6px; }
+tr.ours-no td { color: var(--muted); }

@@ -56,20 +56,40 @@ async function getToken() {
   }
 }
 
-async function request(path, { auth = false } = {}) {
+// After the API refuses us (401/403), errors out (5xx) or can't be reached, stop calling it
+// for a while instead of hammering it on every page view and live poll.
+const PAUSE_MS = 10 * 60000;
+let pausedUntil = 0;
+
+function pauseIfDown(status) {
+  if (status === 401 || status === 403 || status >= 500) pausedUntil = Date.now() + PAUSE_MS;
+}
+
+/** `force` skips the pause (used by the diagnostics script). */
+async function request(path, { auth = false, force = false } = {}) {
+  if (!force && Date.now() < pausedUntil) {
+    throw Object.assign(new Error(`IBIS ${path}: API:t svarar inte, nytt försök om en stund`), { status: 503 });
+  }
   const doFetch = async () => {
     const headers = { ...HEADERS };
     if (auth) headers.authorization = `Bearer ${await getToken()}`;
     return fetch(`${config.ibis.baseUrl}${path}`, { headers, signal: AbortSignal.timeout(15000) });
   };
-  let res = await doFetch();
-  if (res.status === 401) {
-    // Some public endpoints (e.g. teams) need the anonymous startkit token too.
-    if (auth) token = null;
-    auth = true;
+  let res;
+  try {
     res = await doFetch();
+    if (res.status === 401) {
+      // Some public endpoints (e.g. teams) need the anonymous startkit token too.
+      if (auth) token = null;
+      auth = true;
+      res = await doFetch();
+    }
+  } catch (err) {
+    pausedUntil = Date.now() + PAUSE_MS;
+    throw Object.assign(err, { status: err.status || 503 });
   }
   if (!res.ok) {
+    pauseIfDown(res.status);
     const err = new Error(`IBIS ${path}: HTTP ${res.status}`);
     err.status = res.status;
     throw err;
@@ -269,7 +289,8 @@ async function fetchSchedule() {
   }
 
   if (!byId.size && errors.length) {
-    throw new Error(`${errors.join('; ')}. Ange lagets serie-ID på adminsidan (Lag och datakälla).`);
+    console.error('[ibis] %s', errors.join('; '));
+    throw new Error('Innebandyförbundets API går inte att nå. Importera spelprogrammet på adminsidan.');
   }
   return { matches: [...byId.values()], source: sources.join(', ') };
 }
@@ -279,19 +300,35 @@ async function getSchedule({ force = false } = {}) {
   const key = JSON.stringify(s);
   const fresh = Date.now() - schedule.at < config.ibis.scheduleCacheSeconds * 1000;
   if (!force && fresh && schedule.key === key) return schedule;
+  // Matches pasted from stats.innebandy.se on the admin page are always part of the schedule.
+  const imported = archive.imported();
+  const withImported = (list) => {
+    const ids = new Set(list.map((m) => m.id));
+    return [...list, ...imported.filter((m) => !ids.has(m.id))].sort((a, b) => String(a.dateTime).localeCompare(String(b.dateTime)));
+  };
   try {
     const { matches, source } = await fetchSchedule();
-    const normalized = matches.map(normalizeMatch).sort((a, b) => String(a.dateTime).localeCompare(String(b.dateTime)));
+    const normalized = matches.map(normalizeMatch);
     // Keep fresher live data that the live poller may already have merged in.
     for (const m of normalized) {
       const known = liveCache.get(m.id);
       if (known && known.at > Date.now() - 120000) Object.assign(m, pickScore(known.match));
     }
-    schedule = { at: Date.now(), key, matches: normalized, source, error: null, teamId: s.teamId, seasonId: s.seasonId };
     archive.rememberAll(normalized);
+    const sources = [source, imported.length ? 'import' : ''].filter(Boolean).join(', ');
+    schedule = { at: Date.now(), key, matches: withImported(normalized), source: sources, error: null, teamId: s.teamId, seasonId: s.seasonId };
   } catch (err) {
-    console.error('[ibis] kunde inte hämta spelprogram:', err.message);
-    schedule = { ...schedule, at: Date.now() - (config.ibis.scheduleCacheSeconds - 20) * 1000, key, error: err.message };
+    if (!imported.length) console.error('[ibis] kunde inte hämta spelprogram:', err.message);
+    // Retry IBIS in 20 s; meanwhile show the imported matches, if any.
+    schedule = {
+      at: Date.now() - (config.ibis.scheduleCacheSeconds - 20) * 1000,
+      key,
+      matches: withImported([]),
+      source: imported.length ? 'import' : '',
+      error: imported.length ? null : err.message,
+      teamId: s.teamId,
+      seasonId: s.seasonId,
+    };
   }
   return schedule;
 }

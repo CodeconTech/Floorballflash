@@ -121,4 +121,4 @@ function stop() {
   clients.clear();
 }
 
-module.exports = { subscribe, start, stop, broadcastStream };
+module.exports = { subscribe, start, stop, broadcast, broadcastStream };

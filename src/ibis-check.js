@@ -18,13 +18,16 @@ function describe(data) {
   return JSON.stringify(data);
 }
 
+let unauthorized = false;
+
 async function probe(label, path, opts) {
   try {
-    const data = await request(path, opts);
+    const data = await request(path, { ...opts, force: true });
     console.log(`OK   ${label}\n     ${path}\n     ${describe(data)}`);
     return data;
   } catch (err) {
     console.log(`FEL  ${label}\n     ${path}\n     ${err.message}`);
+    if (err.status === 401) unauthorized = true;
     return null;
   }
 }
@@ -60,7 +63,13 @@ async function main() {
   }
 }
 
-main().then(() => process.exit(0), (err) => {
+main().then(() => {
+  if (unauthorized) {
+    console.log('\nAPI:t svarar 401: det kräver numera signerade anrop från stats.innebandy.se och kan inte');
+    console.log('användas härifrån. Klistra in spelprogrammet på adminsidan (Importera matcher) i stället.');
+  }
+  process.exit(0);
+}, (err) => {
   console.error(err);
   process.exit(1);
 });

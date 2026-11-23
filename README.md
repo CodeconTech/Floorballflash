@@ -158,18 +158,16 @@ När felet är åtgärdat: `docker compose restart caddy`.
 
 ## Datakälla
 
-Data hämtas från IBIS-API:t på `api.innebandy.se`:
+**Import (rekommenderat).** Sedan november 2026 kräver innebandyförbundets API (`api.innebandy.se`)
+signerade anrop från stats.innebandy.se och kan inte användas av andra sidor. Matcherna läggs därför
+in genom att kopiera lagets spelprogram från stats.innebandy.se och klistra in det på adminsidan
+(*Importera spelprogram*). Appen läser ut serie, datum, tid, lag, resultat och hall och sparar matcherna;
+samma match uppdateras vid nästa import. Under *Matcher* på adminsidan kan resultat och status ändras
+för hand, t.ex. för att uppdatera ställningen live under en match.
 
-- `/v2/api/public/matches/{id}` – en match. Under pågående match skickas en anonym token från
-  `/StatsAppApi/api/startkit` med, annars returneras inga händelser.
-- `/v2/api/public/competitions/{id}/matches` – alla matcher i en serie.
-
-API:t saknar dokumenterad ändpunkt för ett lags spelprogram. Servern provar därför
-`/v2/api/public/seasons/{seasonId}/teams/{teamId}/matches` och `/v2/api/public/teams/{teamId}/matches`.
-Svarar ingen av dem läses lagets serier ut från `/v2/api/public/seasons/{seasonId}/teams/{teamId}`
-(eller `/v2/api/public/teams/{teamId}`), och seriernas matcher filtreras på laget. Matcher från de
-**serie-ID:n** som anges på adminsidan och eventuella extra match-ID:n läggs också till. Om spelprogrammet blir tomt: ange lagets serie-ID:n på adminsidan
-(syns i adressen på seriens sida på stats.innebandy.se), eller en egen API-sökväg.
+**IBIS-API:t.** Koden för API:t finns kvar och används om det går att nå (t.ex. med ett avtal om
+[iBIS API-tjänst](https://www.innebandy.se/ibis-play/ibis-api-tjanst)). Svarar det med fel pausas anropen
+i tio minuter. `docker compose exec app npm run ibis-check` visar vilka adresser som svarar.
 
 ## Tester
 

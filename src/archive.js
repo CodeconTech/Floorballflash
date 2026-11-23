@@ -21,15 +21,19 @@ function strip(match) {
   return rest;
 }
 
-/** Saves the latest data for a match; records when it was first seen as finished. */
-function remember(match) {
+/**
+ * Saves the latest data for a match; records when it was first seen as finished.
+ * `observed: false` is for data entered after the fact (imports), whose arrival time says
+ * nothing about when the match ended.
+ */
+function remember(match, { observed = true } = {}) {
   if (!match || !match.id) return;
   const prev = db.prepare('SELECT status, finished_at FROM matches WHERE match_id = ?').get(match.id);
   // Only an observed transition gives a reliable end time; matches first seen as already
   // finished fall back to start time + match length.
   const finishedAt = prev && prev.finished_at
     ? prev.finished_at
-    : prev && prev.status !== 4 && match.status === 4 ? Date.now() : null;
+    : observed && prev && prev.status !== 4 && match.status === 4 ? Date.now() : null;
   db.prepare(
     `INSERT INTO matches (match_id, data, start_at, status, finished_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(match_id) DO UPDATE SET data = excluded.data, start_at = excluded.start_at,
@@ -37,10 +41,10 @@ function remember(match) {
   ).run(match.id, JSON.stringify(strip(match)), parseStart(match.dateTime), match.status ?? null, finishedAt, Date.now());
 }
 
-function rememberAll(matches) {
+function rememberAll(matches, options) {
   db.exec('BEGIN');
   try {
-    for (const m of matches) remember(m);
+    for (const m of matches) remember(m, options);
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
@@ -61,10 +65,13 @@ function get(matchId) {
  * Upload window for a match: open until `uploadWindowHours` after it ended. Returns
  * { deadline, open }; deadline is null when the start time is unknown.
  */
+// A match without a set time (imported with timeTbd) is stored at 00:00; count the whole day.
+const lengthOf = (data) => (JSON.parse(data).timeTbd ? 86400000 : MATCH_LENGTH_MS);
+
 function uploadWindow(matchId) {
-  const row = db.prepare('SELECT start_at, finished_at FROM matches WHERE match_id = ?').get(matchId);
+  const row = db.prepare('SELECT start_at, finished_at, data FROM matches WHERE match_id = ?').get(matchId);
   if (!row || (!row.finished_at && !row.start_at)) return { deadline: null, open: true, hours: config.uploadWindowHours };
-  const ended = row.finished_at || row.start_at + MATCH_LENGTH_MS;
+  const ended = row.finished_at || row.start_at + lengthOf(row.data);
   const deadline = ended + config.uploadWindowHours * 3600000;
   return { deadline, open: Date.now() <= deadline, hours: config.uploadWindowHours };
 }
@@ -82,6 +89,14 @@ function withVideos(excludeIds) {
     .filter((m) => !excludeIds.has(m.id));
 }
 
+/** Matches added by pasting the schedule from stats.innebandy.se, oldest first. */
+function imported() {
+  return db
+    .prepare("SELECT data FROM matches WHERE json_extract(data, '$.source') = 'import' ORDER BY start_at, match_id")
+    .all()
+    .map((r) => JSON.parse(r.data));
+}
+
 const PLAYED_AFTER_MS = 3 * 3600000; // a match without a reported result counts as played after this
 
 /** All archived matches that have been played, newest first. */
@@ -90,8 +105,8 @@ function played() {
   return db
     .prepare('SELECT data, start_at, status FROM matches ORDER BY start_at DESC, match_id DESC')
     .all()
-    .filter((r) => r.status === 4 || (r.start_at && r.start_at + PLAYED_AFTER_MS < now && r.status !== 2 && r.status !== 3))
+    .filter((r) => r.status === 4 || (r.start_at && r.start_at + Math.max(PLAYED_AFTER_MS, lengthOf(r.data)) < now && r.status !== 2 && r.status !== 3))
     .map((r) => JSON.parse(r.data));
 }
 
-module.exports = { played, remember, rememberAll, has, get, uploadWindow, withVideos, MATCH_LENGTH_MS };
+module.exports = { played, imported, remember, rememberAll, has, get, uploadWindow, withVideos, MATCH_LENGTH_MS };

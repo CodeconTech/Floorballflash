@@ -249,3 +249,35 @@ test('the results page lists played matches from the archive', async () => {
   const dates = matches.map((m) => m.dateTime).filter(Boolean);
   assert.deepEqual(dates, [...dates].sort().reverse(), 'newest first');
 });
+
+test('the admin imports a pasted schedule and corrects a result by hand', async () => {
+  const { tokensFromFixture } = require('./fixtures/tokens');
+  const admin = cookieOf(await call('/api/admin/login', { method: 'POST', body: { email: 'andreas.wallin@gmail.com', password: 'Blå-Klubba#2026!' } }));
+  const tokens = tokensFromFixture({ links: true });
+
+  assert.equal((await call('/api/admin/import', { method: 'POST', body: { tokens } })).status, 401, 'admin only');
+
+  let res = await call('/api/admin/import', { method: 'POST', body: { tokens, dryRun: true }, cookie: admin });
+  const preview = await res.json();
+  assert.equal(preview.matches.length, 5);
+  assert.ok(preview.matches.every((m) => m.isNew && m.ours));
+  assert.equal((await (await call('/api/matches/1764896')).json()).match?.id, undefined, 'a dry run saves nothing');
+
+  res = await call('/api/admin/import', { method: 'POST', body: { tokens }, cookie: admin });
+  assert.deepEqual(await res.json(), { saved: 5, added: 5, skipped: 0 });
+  res = await call('/api/admin/import', { method: 'POST', body: { tokens }, cookie: admin });
+  assert.equal((await res.json()).added, 0, 're-import updates');
+
+  const { matches } = await (await call('/api/schedule')).json();
+  assert.ok(matches.some((m) => m.id === 1764896 && m.goalsAway === 8), 'imported matches join the schedule');
+  const results = (await (await call('/api/results')).json()).matches;
+  assert.ok(results.some((m) => m.id === 1764687 && m.goalsHome === 6 && m.goalsAway === 6));
+
+  res = await call('/api/admin/matches/1764905', { method: 'PUT', body: { status: 2, goalsHome: 1, goalsAway: 0 }, cookie: admin });
+  assert.equal(res.status, 200);
+  const live = (await (await call('/api/matches/1764905')).json()).match;
+  assert.deepEqual([live.live, live.goalsHome, live.goalsAway], [true, 1, 0]);
+
+  res = await call('/api/admin/matches/1764905', { method: 'PUT', body: { status: 4, goalsHome: '', goalsAway: 0 }, cookie: admin });
+  assert.equal(res.status, 400, 'a finished match needs a score');
+});

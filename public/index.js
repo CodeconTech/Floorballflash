@@ -9,14 +9,15 @@
   const PLAYED_AFTER_MS = 3 * 3600000; // a match counts as played this long after its start
 
   const startOf = (m) => (m.dateTime ? new Date(m.dateTime).getTime() : NaN);
-  const isPlayed = (m) => m.finished || (!m.live && startOf(m) + PLAYED_AFTER_MS < Date.now());
+  // Matches without a set time count as played once their day is over.
+  const isPlayed = (m) => m.finished || (!m.live && startOf(m) + (m.timeTbd ? 86400000 : PLAYED_AFTER_MS) < Date.now());
 
   function row(m) {
     const ours = (t) => data.teamId && (t.id === data.teamId || t.matchTeamId === data.teamId);
     const score = FF.scoreText(m);
     const clips = clipCounts[m.id];
     return el('a', { class: `match-row${m.live ? ' is-live' : ''}`, href: `/match.html?id=${m.id}`, 'data-id': m.id },
-      el('div', { class: 'when' }, el('strong', { text: FF.fmtDate(m.dateTime) }), FF.fmtTime(m.dateTime)),
+      el('div', { class: 'when' }, el('strong', { text: FF.fmtDate(m.dateTime) }), FF.fmtMatchTime(m)),
       el('div', { class: `team home${ours(m.home) ? ' us' : ''}` }, FF.teamLogo(m.home, 28), el('span', { text: m.home.name })),
       el('div', { class: `score${score ? '' : ' pending'}`, text: score || '–' }),
       el('div', { class: `team away${ours(m.away) ? ' us' : ''}` }, FF.teamLogo(m.away, 28), el('span', { text: m.away.name })),
