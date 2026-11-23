@@ -16,7 +16,9 @@ function parseStart(dateTime) {
   return Number.isFinite(t) ? t : null;
 }
 
+// IBIS events are fetched again when needed; events reported on the site exist only here.
 function strip(match) {
+  if (match.report) return match;
   const { events, ...rest } = match;
   return rest;
 }
@@ -58,7 +60,7 @@ function has(matchId) {
 
 function get(matchId) {
   const row = db.prepare('SELECT data FROM matches WHERE match_id = ?').get(matchId);
-  return row ? { ...JSON.parse(row.data), events: [] } : null;
+  return row ? { events: [], ...JSON.parse(row.data) } : null;
 }
 
 /**

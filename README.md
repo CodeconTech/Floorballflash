@@ -9,6 +9,9 @@ liveuppdateringar under matcherna och filmklipp som godkända användare laddar 
 - **Spelprogram och resultat** – kommande matcher, pågående matcher och resultat.
 - **Live** – servern hämtar pågående matcher var 20:e sekund och skickar ändringar direkt till
   webbläsaren (Server-Sent Events). Matchsidan visar ställning, periodresultat, mål och utvisningar.
+- **Liverapportering** – under matchen kan inloggade användare rapportera start, mål (med målskytt),
+  periodpauser och slut direkt från matchsidan i mobilen. Ställning och händelser uppdateras live för
+  alla som följer matchen. Rapportering är öppen från två timmar före start till sex timmar efter.
 - **Livesändning via VDO.Ninja** – på varje matchsida kan en inloggad användare koppla en länk från
   [vdo.ninja](https://vdo.ninja) (eller låta sidan skapa en ny sändning). Sändningen bäddas in på
   matchsidan för alla besökare och startsidan markerar matchen med *📹 Video*. Både visningslänk

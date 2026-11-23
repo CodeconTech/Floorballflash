@@ -281,3 +281,26 @@ test('the admin imports a pasted schedule and corrects a result by hand', async 
   res = await call('/api/admin/matches/1764905', { method: 'PUT', body: { status: 4, goalsHome: '', goalsAway: 0 }, cookie: admin });
   assert.equal(res.status, 400, 'a finished match needs a score');
 });
+
+test('a logged-in user reports a match live and everyone sees it', async () => {
+  const pin = 'Liv3Rapp';
+  await call('/api/auth/register', { method: 'POST', body: { email: 'rapport@exempel.se', pin } });
+  db.prepare("UPDATE users SET status = 'approved' WHERE email = 'rapport@exempel.se'").run();
+  const cookie = cookieOf(await call('/api/auth/login', { method: 'POST', body: { email: 'rapport@exempel.se', pin } }));
+
+  // 1764905 was set to "Pågår" 1–0 by the admin in the import test.
+  let res = await call('/api/matches/1764905');
+  assert.equal((await res.json()).canReport, false, 'not for visitors');
+  res = await call('/api/matches/1764905', { cookie });
+  assert.equal((await res.json()).canReport, true);
+
+  assert.equal((await call('/api/matches/1764905/report', { method: 'POST', body: { action: 'goal', side: 'away' } })).status, 401);
+  res = await call('/api/matches/1764905/report', { method: 'POST', body: { action: 'goal', side: 'away', player: 'Nr 7' }, cookie });
+  assert.equal(res.status, 200);
+  const { match } = await (await call('/api/matches/1764905')).json();
+  assert.deepEqual([match.goalsHome, match.goalsAway, match.events.at(-1).player], [1, 1, 'Nr 7'], 'stored and public');
+
+  // 1764911 is in January 2027: too early for a user to report.
+  res = await call('/api/matches/1764911/report', { method: 'POST', body: { action: 'start' }, cookie });
+  assert.equal(res.status, 403);
+});

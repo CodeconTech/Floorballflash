@@ -272,3 +272,9 @@ select { width: auto; }
 .goal-input { width: 52px !important; padding: 6px !important; text-align: center; }
 td select { padding: 6px; }
 tr.ours-no td { color: var(--muted); }
+
+/* live reporting */
+.report-goals { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.goal-btn { padding: 18px 10px; font-size: 1.05rem; background: var(--ok); color: #fff; white-space: normal; line-height: 1.25; }
+#report-card .row .btn { flex: 1 1 auto; }
+@media (max-width: 520px) { .report-goals { grid-template-columns: 1fr; } }

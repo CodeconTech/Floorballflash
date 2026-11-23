@@ -7,6 +7,7 @@
   let user = null;
   let stream = null;
   let upload = null; // { deadline, open } from the server
+  let canReport = false;
 
   function renderScoreboard(prev) {
     const m = match;
@@ -244,13 +245,80 @@
     renderStream();
   }
 
+  // ---- live reporting ----------------------------------------------------------
+
+  let reporting = false;
+
+  async function report(action, extra = {}) {
+    if (reporting) return;
+    reporting = true;
+    const msg = document.getElementById('report-msg');
+    try {
+      const prev = match;
+      ({ match } = await api(`/api/matches/${matchId}/report`, { method: 'POST', body: { action, ...extra } }));
+      if (match.finished) canReport = false;
+      renderScoreboard(prev);
+      renderEvents();
+      renderReport();
+    } catch (err) {
+      if (msg) FF.message(msg, err.message);
+    } finally {
+      reporting = false;
+    }
+  }
+
+  function renderReport() {
+    const card = document.getElementById('report-card');
+    card.classList.toggle('hidden', !canReport || !match);
+    if (!canReport || !match) return;
+    const b = (label, cls, onclick) => el('button', { class: `btn ${cls}`, type: 'button', onclick }, label);
+    const scorer = el('input', { type: 'text', id: 'scorer', maxlength: 60, placeholder: 'Målskytt (valfritt), t.ex. #14 Erik', autocomplete: 'off' });
+    const goal = (side) => () => {
+      report('goal', { side, player: scorer.value });
+      scorer.value = '';
+    };
+    const period = match.report && match.report.period;
+    let controls;
+    if (match.status === 2) {
+      controls = [
+        el('div', { class: 'report-goals' },
+          b(`🏑 Mål ${match.home.name}`, 'goal-btn', goal('home')),
+          b(`🏑 Mål ${match.away.name}`, 'goal-btn', goal('away'))),
+        el('div', { class: 'field' }, el('label', { for: 'scorer' }, 'Målskytt'), scorer),
+        el('div', { class: 'row' },
+          b('⏸ Periodpaus', 'secondary', () => report('pause')),
+          b('🏁 Slut', 'danger', () => confirm('Avsluta matchen? Ställningen blir slutresultat.') && report('end')),
+          b('↶ Ångra senaste mål', 'secondary', () => confirm('Ta bort det senast rapporterade målet?') && report('undo'))),
+      ];
+    } else if (match.status === 3) {
+      controls = [
+        el('div', { class: 'row' },
+          b(`▶ Starta period ${(period || 0) + 1}`, '', () => report('resume')),
+          b('🏁 Slut', 'danger', () => confirm('Avsluta matchen? Ställningen blir slutresultat.') && report('end')),
+          b('↶ Ångra senaste mål', 'secondary', () => confirm('Ta bort det senast rapporterade målet?') && report('undo'))),
+      ];
+    } else {
+      controls = [el('div', { class: 'row' }, b('▶ Starta matchen', '', () => report('start')))];
+    }
+    document.getElementById('report-area').replaceChildren(
+      el('p', { class: 'muted' },
+        match.status === 2 ? `Period ${period || 1} pågår. ` : match.status === 3 ? `Paus efter period ${period || 1}. ` : 'Matchen har inte startat. ',
+        'Det du rapporterar syns direkt för alla som följer matchen.'),
+      ...controls,
+      el('div', { id: 'report-msg' }),
+    );
+  }
+
   function connectLive() {
     const es = new EventSource(`/api/live?match=${matchId}`);
     es.addEventListener('match', (e) => {
       const prev = match;
       match = JSON.parse(e.data);
+      if (match.finished) canReport = false;
       renderScoreboard(prev);
       renderEvents();
+      // Another reporter changed the match; keep the buttons in step (but not mid-typing).
+      if (!document.activeElement || document.activeElement.id !== 'scorer') renderReport();
     });
     es.addEventListener('stream', async (e) => {
       const update = JSON.parse(e.data).stream;
@@ -272,7 +340,7 @@
     }).catch(() => {});
     loadVideos().catch(() => {});
     try {
-      ({ match, upload } = await api(`/api/matches/${matchId}`));
+      ({ match, upload, canReport } = await api(`/api/matches/${matchId}`));
       renderScoreboard();
       renderEvents();
     } catch (err) {
@@ -280,6 +348,7 @@
       document.getElementById('events').replaceChildren();
     }
     await topbar;
+    renderReport();
     renderStream();
     renderUpload(user);
     connectLive();
