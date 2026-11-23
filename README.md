@@ -79,6 +79,33 @@ docker compose logs -f app
 
 Om brandväggen ufw används: `sudo ufw allow 80,443/tcp`.
 
+### Egen Caddy-konfiguration och fler tjänster
+
+Ändra inte `Caddyfile` eller `docker-compose.yml` på servern – då krockar `git pull` med ändringarna.
+Lägg i stället egna inställningar i filer som git ignorerar:
+
+- **Fler sajter i Caddy** (t.ex. ownCloud på samma server): kopiera `Caddyfile` till `Caddyfile.local`,
+  lägg till sajterna där och sätt `CADDYFILE=./Caddyfile.local` i `.env`. Tjänster som körs direkt på
+  servern nås som `host.docker.internal:PORT`:
+
+  ```
+  floorballflash.codecon.se {
+  	encode gzip
+  	reverse_proxy app:3000
+  }
+
+  owncloud.codecon.se {
+  	encode gzip
+  	reverse_proxy host.docker.internal:4433
+  }
+  ```
+
+- **Andra Docker-ändringar** (t.ex. öppna en port): skriv dem i `docker-compose.override.yml`, som
+  `docker compose` läser in automatiskt.
+
+Ta inte bort `DATA_DIR: /data` ur `docker-compose.yml` och sätt inte `DATA_DIR` i `.env` – då hamnar
+databasen och klippen inuti containern och försvinner när den byggs om (appen varnar i loggen).
+
 ### Uppdatera utan att förlora data
 
 Databasen och filmklippen ligger i datakatalogen (`DATA_PATH`, standard `./data`). Uppdateringar

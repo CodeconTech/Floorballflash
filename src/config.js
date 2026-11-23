@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 
 function int(value, fallback) {
@@ -12,6 +13,13 @@ function idList(value) {
 }
 
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
+
+// In the Docker image only /data is a mounted volume; anything else lives inside the container
+// and is lost when it is rebuilt (e.g. DATA_DIR=./data copied from .env.example).
+if (fs.existsSync('/.dockerenv') && dataDir !== '/data') {
+  console.error(`\n[VARNING] Databas och klipp sparas i ${dataDir} INUTI containern och försvinner när den byggs om.`);
+  console.error('[VARNING] Ta bort DATA_DIR ur .env och behåll "DATA_DIR: /data" i docker-compose.yml.\n');
+}
 
 module.exports = {
   port: int(process.env.PORT, 3000),

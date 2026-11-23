@@ -24,9 +24,14 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Egen Caddy-konfiguration (t.ex. med fler sajter på samma server): sätt CADDYFILE i .env,
+      # t.ex. CADDYFILE=./Caddyfile.local, i stället för att ändra Caddyfile.
+      - ${CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    # Låter Caddy nå tjänster som körs direkt på servern (host.docker.internal:PORT).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     depends_on:
       - app

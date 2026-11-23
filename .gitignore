@@ -1,3 +1,6 @@
 node_modules/
 data/
 .env
+# Serverns egna inställningar, så att git pull aldrig krockar med dem
+Caddyfile.local
+docker-compose.override.yml
