@@ -17,11 +17,19 @@ app.use((req, res, next) => {
     'Referrer-Policy': 'same-origin',
     'Content-Security-Policy':
       "default-src 'self'; img-src 'self' data: https:; media-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-src https://vdo.ninja; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   });
+  // Served over HTTPS only (Secure cookies): tell browsers never to fall back to plain HTTP.
+  if (config.cookieSecure) res.set('Strict-Transport-Security', 'max-age=31536000');
   next();
 });
 
-app.use(express.json({ limit: '20kb' }));
+// Every API call can reach IBIS or the database, so cap how fast one address may call it.
+app.use('/api', auth.rateLimit({ windowMs: 60000, max: 300, name: 'api' }));
+
+// The schedule import parses its own (larger) body.
+const json = express.json({ limit: '20kb' });
+app.use((req, res, next) => (req.path === '/api/admin/import' ? next() : json(req, res, next)));
 app.use(auth.loadSession);
 app.use(auth.csrfGuard);
 

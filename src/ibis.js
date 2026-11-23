@@ -11,6 +11,7 @@
 const config = require('./config');
 const { getTeamSettings } = require('./db');
 const mock = require('./ibis-mock');
+const archive = require('./archive');
 
 const ROOT = '/v2/api/public';
 const HEADERS = {
@@ -55,18 +56,40 @@ async function getToken() {
   }
 }
 
-async function request(path, { auth = false } = {}) {
+// After the API refuses us (401/403), errors out (5xx) or can't be reached, stop calling it
+// for a while instead of hammering it on every page view and live poll.
+const PAUSE_MS = 10 * 60000;
+let pausedUntil = 0;
+
+function pauseIfDown(status) {
+  if (status === 401 || status === 403 || status >= 500) pausedUntil = Date.now() + PAUSE_MS;
+}
+
+/** `force` skips the pause (used by the diagnostics script). */
+async function request(path, { auth = false, force = false } = {}) {
+  if (!force && Date.now() < pausedUntil) {
+    throw Object.assign(new Error(`IBIS ${path}: API:t svarar inte, nytt försök om en stund`), { status: 503 });
+  }
   const doFetch = async () => {
     const headers = { ...HEADERS };
     if (auth) headers.authorization = `Bearer ${await getToken()}`;
     return fetch(`${config.ibis.baseUrl}${path}`, { headers, signal: AbortSignal.timeout(15000) });
   };
-  let res = await doFetch();
-  if (res.status === 401 && auth) {
-    token = null;
+  let res;
+  try {
     res = await doFetch();
+    if (res.status === 401) {
+      // Some public endpoints (e.g. teams) need the anonymous startkit token too.
+      if (auth) token = null;
+      auth = true;
+      res = await doFetch();
+    }
+  } catch (err) {
+    pausedUntil = Date.now() + PAUSE_MS;
+    throw Object.assign(err, { status: err.status || 503 });
   }
   if (!res.ok) {
+    pauseIfDown(res.status);
     const err = new Error(`IBIS ${path}: HTTP ${res.status}`);
     err.status = res.status;
     throw err;
@@ -266,7 +289,8 @@ async function fetchSchedule() {
   }
 
   if (!byId.size && errors.length) {
-    throw new Error(`${errors.join('; ')}. Ange lagets serie-ID på adminsidan (Lag och datakälla).`);
+    console.error('[ibis] %s', errors.join('; '));
+    throw new Error('Innebandyförbundets API går inte att nå. Importera spelprogrammet på adminsidan.');
   }
   return { matches: [...byId.values()], source: sources.join(', ') };
 }
@@ -276,18 +300,35 @@ async function getSchedule({ force = false } = {}) {
   const key = JSON.stringify(s);
   const fresh = Date.now() - schedule.at < config.ibis.scheduleCacheSeconds * 1000;
   if (!force && fresh && schedule.key === key) return schedule;
+  // Matches pasted from stats.innebandy.se on the admin page are always part of the schedule.
+  const imported = archive.imported();
+  const withImported = (list) => {
+    const ids = new Set(list.map((m) => m.id));
+    return [...list, ...imported.filter((m) => !ids.has(m.id))].sort((a, b) => String(a.dateTime).localeCompare(String(b.dateTime)));
+  };
   try {
     const { matches, source } = await fetchSchedule();
-    const normalized = matches.map(normalizeMatch).sort((a, b) => String(a.dateTime).localeCompare(String(b.dateTime)));
+    const normalized = matches.map(normalizeMatch);
     // Keep fresher live data that the live poller may already have merged in.
     for (const m of normalized) {
       const known = liveCache.get(m.id);
       if (known && known.at > Date.now() - 120000) Object.assign(m, pickScore(known.match));
     }
-    schedule = { at: Date.now(), key, matches: normalized, source, error: null, teamId: s.teamId, seasonId: s.seasonId };
+    archive.rememberAll(normalized);
+    const sources = [source, imported.length ? 'import' : ''].filter(Boolean).join(', ');
+    schedule = { at: Date.now(), key, matches: withImported(normalized), source: sources, error: null, teamId: s.teamId, seasonId: s.seasonId };
   } catch (err) {
-    console.error('[ibis] kunde inte hämta spelprogram:', err.message);
-    schedule = { ...schedule, at: Date.now() - (config.ibis.scheduleCacheSeconds - 20) * 1000, key, error: err.message };
+    if (!imported.length) console.error('[ibis] kunde inte hämta spelprogram:', err.message);
+    // Retry IBIS in 20 s; meanwhile show the imported matches, if any.
+    schedule = {
+      at: Date.now() - (config.ibis.scheduleCacheSeconds - 20) * 1000,
+      key,
+      matches: withImported([]),
+      source: imported.length ? 'import' : '',
+      error: imported.length ? null : err.message,
+      teamId: s.teamId,
+      seasonId: s.seasonId,
+    };
   }
   return schedule;
 }
@@ -306,31 +347,60 @@ function pickScore(m) {
   };
 }
 
+const MAX_CACHED = 500;
+const misses = new Map(); // matchId -> time of a failed lookup, so unknown IDs aren't re-fetched constantly
+
+function cacheMatch(matchId, match) {
+  liveCache.delete(matchId);
+  liveCache.set(matchId, { at: Date.now(), match });
+  // Map keeps insertion order, so the first keys are the least recently fetched.
+  for (const key of liveCache.keys()) {
+    if (liveCache.size <= MAX_CACHED) break;
+    liveCache.delete(key);
+  }
+}
+
+async function fetchRaw(matchId, live) {
+  if (config.ibis.mock) {
+    const raw = mock.match(matchId, getTeamSettings().teamId);
+    if (!raw) throw Object.assign(new Error('Matchen finns inte'), { status: 404 });
+    return raw;
+  }
+  try {
+    return await request(`${ROOT}/matches/${matchId}`, { auth: live });
+  } catch (err) {
+    // If the token flow is down, public data is still better than nothing.
+    if (!live || err.status === 404) throw err;
+    return request(`${ROOT}/matches/${matchId}`);
+  }
+}
+
 /** Fetches one match. `live` attaches the startkit token so ongoing events are included. */
 async function getMatch(matchId, { live = true, maxAgeMs = 10000 } = {}) {
   const cached = liveCache.get(matchId);
   if (cached && Date.now() - cached.at < maxAgeMs) return cached.match;
+  const missedAt = misses.get(matchId);
   let raw;
-  if (config.ibis.mock) {
-    raw = mock.match(matchId, getTeamSettings().teamId);
-    if (!raw) {
-      const err = new Error('Matchen finns inte');
-      err.status = 404;
-      throw err;
+  try {
+    if (missedAt && Date.now() - missedAt < 60000) throw Object.assign(new Error('Matchen finns inte'), { status: 404 });
+    raw = await fetchRaw(matchId, live);
+    misses.delete(matchId);
+  } catch (err) {
+    if (err.status === 404 && (!missedAt || Date.now() - missedAt >= 60000)) {
+      misses.set(matchId, Date.now());
+      if (misses.size > MAX_CACHED) misses.delete(misses.keys().next().value);
     }
-  } else {
-    try {
-      raw = await request(`${ROOT}/matches/${matchId}`, { auth: live });
-    } catch (err) {
-      // If the token flow is down, public data is still better than nothing.
-      if (!live || err.status === 404) throw err;
-      raw = await request(`${ROOT}/matches/${matchId}`);
-    }
+    // Played matches stay viewable from the archive when IBIS no longer returns them.
+    const stored = archive.get(matchId);
+    if (stored) return stored;
+    throw err;
   }
   const match = normalizeMatch(raw);
-  liveCache.set(matchId, { at: Date.now(), match });
+  cacheMatch(matchId, match);
   const inSchedule = schedule.matches.find((m) => m.id === matchId);
   if (inSchedule) Object.assign(inSchedule, pickScore(match));
+  // Only the team's own matches are archived, so looking up arbitrary IDs can't fill the database.
+  if (inSchedule || archive.has(matchId)) archive.remember(match);
   return match;
 }
 

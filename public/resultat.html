@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resultat – Floorballflash</title>
+  <meta name="description" content="Resultat och statistik från lagets spelade matcher.">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/common.js" defer></script>
+  <script src="/resultat.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🏑 Floorballflash</a>
+    <nav id="nav"></nav>
+  </header>
+  <main>
+    <div class="section-head flush">
+      <h1>Resultat</h1>
+      <div class="row">
+        <label class="sr-only" for="season">Säsong</label>
+        <select id="season"></select>
+        <label class="sr-only" for="competition">Serie</label>
+        <select id="competition"></select>
+      </div>
+    </div>
+
+    <section class="tiles" id="summary"></section>
+
+    <div id="results" class="matches"><div class="empty">Hämtar resultat…</div></div>
+  </main>
+</body>
+</html>

@@ -15,9 +15,14 @@
   tabs.register.addEventListener('click', () => show('register'));
   if (location.hash === '#registrera') show('register');
 
+  // Only same-site paths: "/\evil.example" would pass a startsWith('/') check, so resolve it.
   function safeNext() {
-    const next = new URLSearchParams(location.search).get('next') || '/';
-    return next.startsWith('/') && !next.startsWith('//') ? next : '/';
+    try {
+      const url = new URL(new URLSearchParams(location.search).get('next') || '/', location.origin);
+      return url.origin === location.origin ? url.pathname + url.search + url.hash : '/';
+    } catch {
+      return '/';
+    }
   }
 
   loginForm.addEventListener('submit', async (e) => {

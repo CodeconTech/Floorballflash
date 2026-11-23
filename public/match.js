@@ -6,6 +6,7 @@
   let match = null;
   let user = null;
   let stream = null;
+  let upload = null; // { deadline, open } from the server
 
   function renderScoreboard(prev) {
     const m = match;
@@ -17,13 +18,13 @@
       el('div', { class: 'comp', text: [m.competition, m.round].filter(Boolean).join(' · ') }),
       el('div', { class: 'sb-grid' },
         el('div', { class: 'sb-team' }, FF.teamLogo(m.home, 64), el('span', { text: m.home.name })),
-        el('div', { class: `sb-score${changed ? ' flash' : ''}`, text: score || FF.fmtTime(m.dateTime) || '–' }),
+        el('div', { class: `sb-score${changed ? ' flash' : ''}`, text: score || (m.timeTbd ? '–' : FF.fmtTime(m.dateTime)) || '–' }),
         el('div', { class: 'sb-team' }, FF.teamLogo(m.away, 64), el('span', { text: m.away.name })),
       ),
       periods ? el('div', { class: 'periods', text: periods }) : '',
       el('div', { class: 'sb-status' },
         FF.statusBadge(m),
-        el('span', { class: 'muted', text: FF.fmtLong(m.dateTime) }),
+        el('span', { class: 'muted', text: FF.fmtMatchLong(m) }),
         m.venue ? el('span', { class: 'muted', text: m.venue }) : '',
         m.spectators ? el('span', { class: 'muted', text: `${m.spectators} åskådare` }) : ''),
       el('div', { class: 'links' },
@@ -83,6 +84,13 @@
       );
       return;
     }
+    if (upload && !upload.open && user.kind !== 'admin') {
+      area.replaceChildren(el('p', { class: 'muted', text: `Uppladdningen är stängd. Klipp kan laddas upp till och med ${FF.fmtStamp(upload.deadline)}, ${upload.hours} timmar efter matchen.` }));
+      return;
+    }
+    const deadlineHint = upload && upload.deadline
+      ? el('p', { class: 'hint', text: upload.open ? `Uppladdningen är öppen till ${FF.fmtStamp(upload.deadline)}.` : `Uppladdningen stängde ${FF.fmtStamp(upload.deadline)} (du kan ladda upp som admin).` })
+      : '';
     const msg = el('div');
     const progress = el('progress', { max: 1, value: 0, class: 'hidden' });
     const submit = el('button', { class: 'btn', type: 'submit' }, 'Ladda upp');
@@ -94,17 +102,16 @@
         el('label', { for: 'video' }, 'Videofil'),
         el('input', { id: 'video', name: 'video', type: 'file', accept: 'video/mp4,video/quicktime,video/webm,video/ogg,.mp4,.mov,.m4v,.webm,.ogv', required: true }),
         el('div', { class: 'hint', text: 'MP4 (H.264) spelas upp i alla webbläsare. MOV från iPhone fungerar i de flesta.' })),
-      progress, msg, submit,
+      deadlineHint, progress, msg, submit,
     );
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const fd = new FormData(form);
-      fd.append('matchId', String(matchId));
       submit.disabled = true;
       progress.classList.remove('hidden');
       FF.message(msg, '');
       try {
-        await FF.upload('/api/videos', fd, (p) => { progress.value = p; });
+        await FF.upload(`/api/videos?match=${matchId}`, fd, (p) => { progress.value = p; });
         form.reset();
         FF.message(msg, 'Klippet är uppladdat!', 'ok');
         loadVideos();
@@ -170,8 +177,10 @@
     const card = document.getElementById('stream-card');
     const area = document.getElementById('stream-area');
     if (!stream) {
-      card.classList.toggle('hidden', !user);
-      if (user) {
+      // Offer to attach a stream only before and during the match.
+      const canAdd = Boolean(user) && !(match && match.finished);
+      card.classList.toggle('hidden', !canAdd);
+      if (canAdd) {
         area.replaceChildren(
           el('p', { class: 'muted', text: 'Ska matchen sändas? Koppla en livesändning från VDO.Ninja så kan alla titta här på sidan.' }),
           streamForm(),
@@ -257,20 +266,22 @@
       document.getElementById('scoreboard').replaceChildren(el('p', { text: 'Ingen match vald.' }));
       return;
     }
-    FF.renderTopbar().then((me) => {
+    const topbar = FF.renderTopbar().then((me) => {
       user = me;
-      renderUpload(me);
       return loadStream();
     }).catch(() => {});
     loadVideos().catch(() => {});
     try {
-      match = (await api(`/api/matches/${matchId}`)).match;
+      ({ match, upload } = await api(`/api/matches/${matchId}`));
       renderScoreboard();
       renderEvents();
     } catch (err) {
       document.getElementById('scoreboard').replaceChildren(el('p', { text: err.message }));
       document.getElementById('events').replaceChildren();
     }
+    await topbar;
+    renderStream();
+    renderUpload(user);
     connectLive();
   }
 

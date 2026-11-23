@@ -8,6 +8,8 @@ const multer = require('multer');
 const config = require('../config');
 const { db } = require('../db');
 const auth = require('../auth');
+const ibis = require('../ibis');
+const archive = require('../archive');
 
 const router = express.Router();
 
@@ -59,7 +61,28 @@ router.get('/api/videos/counts', (req, res) => {
   res.json({ counts: Object.fromEntries(rows.map((r) => [r.match_id, r.n])) });
 });
 
-router.post('/api/videos', auth.requireUser, (req, res, next) => {
+/**
+ * Checks the match before any file data is accepted: it must be one of the team's matches
+ * and, except for the admin, still within the upload window after it was played.
+ */
+async function checkMatch(req, res, next) {
+  const matchId = parseInt(req.query.match, 10);
+  if (!(matchId > 0)) return res.status(400).json({ error: 'Ange vilken match klippet hör till.' });
+  try {
+    await ibis.getMatch(matchId, { live: false, maxAgeMs: 300000 });
+  } catch (err) {
+    return res.status(err.status === 404 ? 404 : 502).json({ error: err.status === 404 ? 'Matchen finns inte.' : 'Kunde inte kontrollera matchen just nu.' });
+  }
+  if (!archive.has(matchId)) return res.status(404).json({ error: 'Matchen finns inte i lagets spelprogram.' });
+  const uploadWindow = archive.uploadWindow(matchId);
+  if (!uploadWindow.open && req.user.kind !== 'admin') {
+    return res.status(403).json({ error: `Uppladdningen är stängd. Klipp kan laddas upp till ${config.uploadWindowHours} timmar efter matchen.` });
+  }
+  req.matchId = matchId;
+  next();
+}
+
+router.post('/api/videos', auth.requireUser, checkMatch, (req, res) => {
   upload.single('video')(req, res, (err) => {
     if (err) {
       if (req.file) fs.rm(req.file.path, { force: true }, () => {});
@@ -67,11 +90,11 @@ router.post('/api/videos', auth.requireUser, (req, res, next) => {
       return res.status(err.status || 400).json({ error: msg });
     }
     if (!req.file) return res.status(400).json({ error: 'Välj en videofil.' });
-    const matchId = parseInt(req.body.matchId, 10);
+    const matchId = req.matchId;
     const title = String(req.body.title || '').trim().slice(0, 120);
-    if (!(matchId > 0) || !title) {
+    if (!title) {
       fs.rm(req.file.path, { force: true }, () => {});
-      return res.status(400).json({ error: 'Ange match och titel.' });
+      return res.status(400).json({ error: 'Ange en titel.' });
     }
     const ext = path.extname(req.file.filename);
     const info = db

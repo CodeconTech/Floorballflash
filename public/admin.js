@@ -147,7 +147,9 @@
   }
 
   async function loadSettings() {
-    const { settings, mock } = await api('/api/admin/settings');
+    const { settings, fromEnv, mock } = await api('/api/admin/settings');
+    $('env-comp').textContent = fromEnv.competitionIds.length ? `Från .env (COMPETITION_IDS), tas alltid med: ${fromEnv.competitionIds.join(', ')}` : '';
+    $('env-extra').textContent = fromEnv.extraMatchIds.length ? `Från .env (EXTRA_MATCH_IDS), tas alltid med: ${fromEnv.extraMatchIds.join(', ')}` : '';
     const f = $('settings-form');
     f.teamId.value = settings.teamId;
     f.seasonId.value = settings.seasonId;
@@ -219,13 +221,157 @@
     );
   }
 
+  // ---- schedule import ------------------------------------------------------------
+
+  const BLOCK = new Set(['ADDRESS', 'ARTICLE', 'ASIDE', 'BR', 'DIV', 'DL', 'DT', 'DD', 'FOOTER', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'SECTION', 'TABLE', 'TD', 'TH', 'TR', 'UL']);
+
+  /**
+   * Turns pasted HTML into { text, href? } tokens in reading order: each link becomes its
+   * own token and the text between links and block boundaries is joined. The HTML is only
+   * parsed (DOMParser runs no scripts) and never inserted into the page.
+   */
+  function tokensFromHtml(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const tokens = [];
+    let buffer = '';
+    const flush = () => {
+      for (const part of buffer.split(/\n+/)) {
+        const text = part.replace(/\s+/g, ' ').trim();
+        if (text) tokens.push({ text });
+      }
+      buffer = '';
+    };
+    const walk = (node) => {
+      for (const n of node.childNodes) {
+        if (n.nodeType === Node.TEXT_NODE) buffer += n.textContent;
+        else if (n.nodeType === Node.ELEMENT_NODE) {
+          if (['SCRIPT', 'STYLE', 'TEMPLATE'].includes(n.tagName)) continue;
+          if (n.tagName === 'A') {
+            flush();
+            const text = n.textContent.replace(/\s+/g, ' ').trim();
+            if (text) tokens.push({ text, href: n.getAttribute('href') || '' });
+            continue;
+          }
+          const block = BLOCK.has(n.tagName);
+          if (block) flush();
+          walk(n);
+          if (block) flush();
+        }
+      }
+    };
+    walk(doc.body);
+    flush();
+    return tokens;
+  }
+
+  const tokensFromText = (text) => text.split(/\r?\n/).map((line) => ({ text: line.trim() })).filter((t) => t.text);
+
+  let pendingTokens = null;
+
+  async function previewImport(tokens) {
+    pendingTokens = tokens;
+    FF.message($('import-msg'), '');
+    $('import-preview').replaceChildren();
+    try {
+      const { matches, skipped } = await api('/api/admin/import', { method: 'POST', body: { tokens, dryRun: true } });
+      const played = matches.filter((m) => m.goalsHome !== null).length;
+      const added = matches.filter((m) => m.isNew).length;
+      const notOurs = matches.filter((m) => !m.ours).length;
+      const save = el('button', { class: 'btn', type: 'button' }, `Spara ${matches.length} matcher`);
+      save.addEventListener('click', async () => {
+        save.disabled = true;
+        try {
+          const res = await api('/api/admin/import', { method: 'POST', body: { tokens: pendingTokens } });
+          FF.message($('import-msg'), `Sparat: ${res.saved} matcher (${res.added} nya, ${res.saved - res.added} uppdaterade).`, 'ok');
+          $('import-preview').replaceChildren();
+          $('paste-box').replaceChildren();
+          loadMatches();
+        } catch (err) {
+          FF.message($('import-msg'), err.message);
+          save.disabled = false;
+        }
+      });
+      $('import-preview').replaceChildren(
+        el('p', {}, `${matches.length} matcher hittades: ${played} spelade, ${matches.length - played} kommande, ${added} nya.`,
+          skipped ? ` ${skipped} rader kunde inte tolkas.` : '',
+          notOurs ? el('strong', { text: ` ${notOurs} matcher verkar inte gälla laget (lag-ID i inställningarna) – kontrollera.` }) : ''),
+        el('div', { class: 'table-wrap' }, el('table', {},
+          el('thead', {}, el('tr', {}, ['Datum', 'Serie', 'Hemma', 'Resultat', 'Borta', 'Hall'].map((h) => el('th', { text: h })))),
+          el('tbody', {}, matches.map((m) => el('tr', { class: m.ours ? '' : 'ours-no' },
+            el('td', { text: `${FF.fmtDate(m.dateTime)} ${m.timeTbd ? '(tid ej satt)' : FF.fmtTime(m.dateTime)}` }),
+            el('td', { text: m.competition }),
+            el('td', { text: m.home }),
+            el('td', { text: m.goalsHome === null ? '–' : `${m.goalsHome}–${m.goalsAway}` }),
+            el('td', { text: m.away }),
+            el('td', { text: m.venue }))))),
+        ),
+        el('div', { class: 'row' }, save),
+      );
+    } catch (err) {
+      FF.message($('import-msg'), err.message);
+    }
+  }
+
+  function setupImport() {
+    const box = $('paste-box');
+    box.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const html = e.clipboardData.getData('text/html');
+      const text = e.clipboardData.getData('text/plain');
+      const tokens = html ? tokensFromHtml(html) : tokensFromText(text);
+      box.textContent = `Inklistrat: ${tokens.length} textrader${html ? ' med länkar' : ''}.`;
+      previewImport(tokens);
+    });
+    // Typing or dropping content isn't supported; only paste.
+    box.addEventListener('beforeinput', (e) => {
+      if (e.inputType !== 'insertFromPaste') e.preventDefault();
+    });
+  }
+
+  // ---- manual results -----------------------------------------------------------
+
+  async function loadMatches() {
+    const { matches } = await api('/api/admin/matches');
+    const statuses = [[1, 'Ej påbörjad'], [2, 'Pågår'], [3, 'Paus'], [4, 'Slut']];
+    $('matches').replaceChildren(
+      ...(matches.length
+        // Closest to today first: those are the ones to update.
+        ? [...matches].sort((a, b) => Math.abs(new Date(a.dateTime) - Date.now()) - Math.abs(new Date(b.dateTime) - Date.now())).map((m) => {
+            const gh = el('input', { type: 'number', min: 0, max: 99, class: 'goal-input', value: m.goalsHome ?? '', 'aria-label': `Mål ${m.home.name}` });
+            const ga = el('input', { type: 'number', min: 0, max: 99, class: 'goal-input', value: m.goalsAway ?? '', 'aria-label': `Mål ${m.away.name}` });
+            const st = el('select', { 'aria-label': 'Status' }, statuses.map(([v, label]) => el('option', { value: v, selected: m.status === v }, label)));
+            const save = el('button', {
+              class: 'btn small',
+              type: 'button',
+              onclick: async () => {
+                try {
+                  await api(`/api/admin/matches/${m.id}`, { method: 'PUT', body: { goalsHome: gh.value, goalsAway: ga.value, status: st.value } });
+                  FF.message($('matches-msg'), `Sparat: ${m.home.name} – ${m.away.name}.`, 'ok');
+                } catch (err) {
+                  FF.message($('matches-msg'), err.message);
+                }
+              },
+            }, 'Spara');
+            return el('tr', {},
+              el('td', { text: `${FF.fmtDate(m.dateTime)} ${m.timeTbd ? '' : FF.fmtTime(m.dateTime)}` }),
+              el('td', {}, el('a', { href: `/match.html?id=${m.id}` }, m.competition || 'Match')),
+              el('td', {}, el('div', { text: m.home.name }), gh),
+              el('td', {}, el('div', { text: m.away.name }), ga),
+              el('td', {}, st),
+              el('td', {}, save));
+          })
+        : [el('tr', {}, el('td', { colspan: 6, class: 'muted', text: 'Inga matcher ännu. Importera spelprogrammet ovan.' }))]),
+    );
+  }
+
   async function init() {
     await FF.renderTopbar();
     const status = await api('/api/admin/status');
     if (!status.loggedIn || location.hash.includes('token=')) return setupAuthView(status);
     $('admin-view').classList.remove('hidden');
     $('change-pw').addEventListener('click', () => requestLink($('change-msg')));
-    await Promise.all([loadUsers(), loadSettings(), loadVideos(), loadMail()]);
+    setupImport();
+    await Promise.all([loadUsers(), loadSettings(), loadVideos(), loadMail(), loadMatches()]);
   }
 
   init().catch((err) => alert(err.message));

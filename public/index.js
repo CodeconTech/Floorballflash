@@ -4,27 +4,40 @@
   const { api, el } = FF;
   let data = null;
   let clipCounts = {};
+  let showAll = false;
+  const PLAYED_SHOWN = 10;
+  const PLAYED_AFTER_MS = 3 * 3600000; // a match counts as played this long after its start
+
+  const startOf = (m) => (m.dateTime ? new Date(m.dateTime).getTime() : NaN);
+  // Matches without a set time count as played once their day is over.
+  const isPlayed = (m) => m.finished || (!m.live && startOf(m) + (m.timeTbd ? 86400000 : PLAYED_AFTER_MS) < Date.now());
 
   function row(m) {
     const ours = (t) => data.teamId && (t.id === data.teamId || t.matchTeamId === data.teamId);
     const score = FF.scoreText(m);
     const clips = clipCounts[m.id];
     return el('a', { class: `match-row${m.live ? ' is-live' : ''}`, href: `/match.html?id=${m.id}`, 'data-id': m.id },
-      el('div', { class: 'when' }, el('strong', { text: FF.fmtDate(m.dateTime) }), FF.fmtTime(m.dateTime)),
+      el('div', { class: 'when' }, el('strong', { text: FF.fmtDate(m.dateTime) }), FF.fmtMatchTime(m)),
       el('div', { class: `team home${ours(m.home) ? ' us' : ''}` }, FF.teamLogo(m.home, 28), el('span', { text: m.home.name })),
       el('div', { class: `score${score ? '' : ' pending'}`, text: score || '–' }),
       el('div', { class: `team away${ours(m.away) ? ' us' : ''}` }, FF.teamLogo(m.away, 28), el('span', { text: m.away.name })),
       el('div', { class: 'meta' },
         FF.statusBadge(m),
-        m.hasStream && !m.finished ? el('span', { class: 'badge stream', text: '📹 Video' }) : null,
+        m.hasStream && !isPlayed(m) ? el('span', { class: 'badge stream', text: '📹 Video' }) : null,
         clips ? el('span', { class: 'badge clips', text: `🎬 ${clips}` }) : null),
     );
   }
 
   function render() {
-    const upcoming = data.matches.filter((m) => !m.finished && !m.live);
     const live = data.matches.filter((m) => m.live);
-    const played = data.matches.filter((m) => m.finished).reverse();
+    const upcoming = data.matches.filter((m) => !m.live && !isPlayed(m));
+    // Played matches from the schedule plus archived ones (earlier seasons) that have clips.
+    // Matches the federation hasn't reported yet are marked as played once their time has passed.
+    const onlyClips = document.getElementById('only-clips').checked;
+    const played = [...data.matches.filter(isPlayed), ...(data.archived || [])]
+      .map((m) => (m.finished ? m : { ...m, statusText: 'Spelad' }))
+      .filter((m) => !onlyClips || clipCounts[m.id])
+      .sort((a, b) => startOf(b) - startOf(a) || b.id - a.id);
 
     const liveBox = document.getElementById('live-now');
     liveBox.replaceChildren(
@@ -35,7 +48,10 @@
     const fill = (id, list, emptyText) =>
       document.getElementById(id).replaceChildren(...(list.length ? list.map(row) : [el('div', { class: 'empty', text: emptyText })]));
     fill('upcoming', upcoming, data.error ? `Kunde inte hämta spelprogrammet: ${data.error}` : 'Inga kommande matcher.');
-    fill('played', played, 'Inga spelade matcher ännu.');
+    fill('played', showAll ? played : played.slice(0, PLAYED_SHOWN), onlyClips ? 'Inga tidigare matcher med klipp.' : 'Inga spelade matcher ännu.');
+    const more = document.getElementById('show-all');
+    more.classList.toggle('hidden', played.length <= PLAYED_SHOWN);
+    more.textContent = showAll ? 'Visa färre' : `Visa alla tidigare matcher (${played.length})`;
     document.getElementById('updated').textContent = data.updatedAt ? `Uppdaterad ${FF.fmtStamp(data.updatedAt)}` : '';
   }
 
@@ -84,6 +100,12 @@
       render();
     }
   }
+
+  document.getElementById('only-clips').addEventListener('change', () => data && render());
+  document.getElementById('show-all').addEventListener('click', () => {
+    showAll = !showAll;
+    render();
+  });
 
   FF.renderTopbar();
   loadSchedule();

@@ -15,11 +15,15 @@ liveuppdateringar under matcherna och filmklipp som godkända användare laddar 
   (`?view=…`) och sändningslänk (`?push=…`) går att klistra in – besökarna får alltid bara
   visningslänken. Den som kopplat sändningen (och admin) ser länken för kameran och kan byta eller
   ta bort sändningen.
-- **Filmklipp** – inloggade användare laddar upp klipp (mp4, mov, m4v, webm, ogv) till en match.
+- **Filmklipp** – inloggade användare laddar upp klipp (mp4, mov, m4v, webm, ogv) till en match,
+  fram till 12 timmar efter matchen (`UPLOAD_WINDOW_HOURS`; admin kan alltid ladda upp).
   Alla besökare kan titta, utan inloggning.
+- **Tidigare matcher** – spelade matcher listas med resultat och klipp. Matcher sparas i databasen,
+  så matcher med klipp finns kvar även när de inte längre ingår i spelprogrammet (t.ex. förra säsongen).
 - **Inloggning med e-post och pinkod** – pinkoden är exakt 8 tecken (bokstäver/siffror).
   Nya konton måste godkännas: ett mejl med knapparna *Godkänn användare* och *Neka användare* skickas
-  till administratören (`ADMIN_EMAIL`, standard andreas.wallin@gmail.com). Användaren får besked via mejl.
+  till administratören (`ADMIN_EMAIL`, standard andreas.wallin@gmail.com). Länken gäller i 90 dagar
+  (`APPROVAL_LINK_DAYS`); därefter godkänns användaren på adminsidan. Användaren får besked via mejl.
 - **Adminsida** (`/admin.html`) – administratören loggar in med samma e-postadress och ett starkt
   lösenord (minst 12 tecken, tre teckentyper). Lösenordet skapas/återställs via en engångslänk
   som mejlas till administratörsadressen, så ingen annan kan ta över kontot. På adminsidan kan man
@@ -63,8 +67,8 @@ curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker $USER        # logga ut och in igen
 
 # 2. Hämta koden och skapa inställningarna
-git clone https://github.com/CodeconTech/Floorballflash.git /opt/floorballflash
-cd /opt/floorballflash
+git clone https://github.com/CodeconTech/Floorballflash.git /raid_storage/floorballflash
+cd /raid_storage/floorballflash
 cp .env.example .env && chmod 600 .env
 nano .env                            # sätt DOMAIN, PUBLIC_URL och SMTP-uppgifter
 
@@ -75,18 +79,54 @@ docker compose logs -f app
 
 Om brandväggen ufw används: `sudo ufw allow 80,443/tcp`.
 
-Databasen och filmerna sparas i `./data` (bredvid `docker-compose.yml`). Säkerhetskopiera den katalogen,
-t.ex. nattligt via `crontab -e`:
+### Uppdatera utan att förlora data
 
-```
-0 3 * * * tar czf /var/backups/floorballflash-$(date +\%F).tar.gz -C /opt/floorballflash data
-```
-
-Uppdatera till senaste versionen:
+Databasen och filmklippen ligger i datakatalogen (`DATA_PATH`, standard `./data`). Uppdateringar
+rör bara koden och containern, aldrig datakatalogen. Uppdatera med skriptet:
 
 ```bash
-cd /opt/floorballflash && git pull && docker compose up -d --build
+cd /raid_storage/floorballflash && ./scripts/update.sh
 ```
+
+Det tar en säkerhetskopia av databasen (i `DATA_PATH/backups`), avbryter om koden har lokala
+ändringar, hämtar ny kod med `git pull --ff-only`, bygger om och kontrollerar sedan att appen svarar
+och att inga klippfiler har försvunnit. Nya versioner ändrar databasen bara genom att lägga till
+tabeller och kolumner, aldrig genom att ta bort.
+
+**Lägg datakatalogen utanför kodmappen** så kan ingenting som görs med koden (`git clean`, en ny
+`git clone`, att kodmappen tas bort) nå klippen. En gång:
+
+```bash
+cd /raid_storage/floorballflash
+docker compose down
+sudo mv data /raid_storage/floorballflash-data
+echo "DATA_PATH=/raid_storage/floorballflash-data" >> .env
+docker compose up -d
+```
+
+**Kommandon som raderar data** – kör dem inte i kodmappen så länge datan ligger där:
+
+| Kommando | Vad som försvinner |
+|---|---|
+| `git clean -x`, `git clean -fdx` | `data/` (den är ignorerad av git och räknas som skräp) |
+| `rm -rf` på kodmappen eller ny `git clone` över den | allt i `data/` |
+| `docker compose down -v` | Caddys certifikat (inte klippen, men nya certifikat måste hämtas) |
+
+Vanliga `git pull`, `docker compose up -d --build`, `docker compose down`, `restart` och
+`docker system prune` rör inte datakatalogen.
+
+### Säkerhetskopiering
+
+`docker compose exec app npm run backup` tar en säker kopia av databasen medan appen körs (de 20
+senaste sparas i `DATA_PATH/backups`). Filmklippen ändras aldrig efter uppladdning och kopieras enklast
+med `rsync`. Kopiera till en annan disk eller maskin, t.ex. nattligt via `crontab -e`:
+
+```
+0 3 * * * cd /raid_storage/floorballflash && docker compose exec -T app npm run -s backup && rsync -a /raid_storage/floorballflash-data/ /mnt/backup/floorballflash/
+```
+
+`rsync` utan `--delete` behåller även klipp som tagits bort på sidan. RAID skyddar mot en trasig disk,
+men inte mot att något raderas – därför en kopia på ett annat ställe.
 
 Utan Caddy går det också att köra bara appen (`docker build -t floorballflash . && docker run -d
 -p 3000:3000 -v floorballflash-data:/data --env-file .env floorballflash`), men lägg då en
@@ -101,7 +141,8 @@ och vilka serie-ID:n som hittas:
 docker compose exec app npm run ibis-check
 ```
 
-Hittas inget serie-ID automatiskt anger du det på adminsidan under *Lag och datakälla*.
+Hittas inget serie-ID automatiskt anger du serierna i `.env` (`COMPETITION_IDS=45219,45220`, följt av
+`docker compose up -d`) eller på adminsidan under *Lag och datakälla*.
 
 **HTTPS-certifikatet fungerar inte.** Titta i Caddys logg: `docker compose logs caddy --tail 100`.
 Vanliga orsaker:
@@ -117,18 +158,16 @@ När felet är åtgärdat: `docker compose restart caddy`.
 
 ## Datakälla
 
-Data hämtas från IBIS-API:t på `api.innebandy.se`:
+**Import (rekommenderat).** Sedan november 2026 kräver innebandyförbundets API (`api.innebandy.se`)
+signerade anrop från stats.innebandy.se och kan inte användas av andra sidor. Matcherna läggs därför
+in genom att kopiera lagets spelprogram från stats.innebandy.se och klistra in det på adminsidan
+(*Importera spelprogram*). Appen läser ut serie, datum, tid, lag, resultat och hall och sparar matcherna;
+samma match uppdateras vid nästa import. Under *Matcher* på adminsidan kan resultat och status ändras
+för hand, t.ex. för att uppdatera ställningen live under en match.
 
-- `/v2/api/public/matches/{id}` – en match. Under pågående match skickas en anonym token från
-  `/StatsAppApi/api/startkit` med, annars returneras inga händelser.
-- `/v2/api/public/competitions/{id}/matches` – alla matcher i en serie.
-
-API:t saknar dokumenterad ändpunkt för ett lags spelprogram. Servern provar därför
-`/v2/api/public/seasons/{seasonId}/teams/{teamId}/matches` och `/v2/api/public/teams/{teamId}/matches`.
-Svarar ingen av dem läses lagets serier ut från `/v2/api/public/seasons/{seasonId}/teams/{teamId}`
-(eller `/v2/api/public/teams/{teamId}`), och seriernas matcher filtreras på laget. Matcher från de
-**serie-ID:n** som anges på adminsidan och eventuella extra match-ID:n läggs också till. Om spelprogrammet blir tomt: ange lagets serie-ID:n på adminsidan
-(syns i adressen på seriens sida på stats.innebandy.se), eller en egen API-sökväg.
+**IBIS-API:t.** Koden för API:t finns kvar och används om det går att nå (t.ex. med ett avtal om
+[iBIS API-tjänst](https://www.innebandy.se/ibis-play/ibis-api-tjanst)). Svarar det med fel pausas anropen
+i tio minuter. `docker compose exec app npm run ibis-check` visar vilka adresser som svarar.
 
 ## Tester
 

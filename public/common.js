@@ -54,6 +54,10 @@ const FF = (() => {
   const fmtDate = (s) => (s ? dateFmt.format(parseDate(s)) : '');
   const fmtTime = (s) => (s ? timeFmt.format(parseDate(s)) : '');
   const fmtLong = (s) => (s ? longFmt.format(parseDate(s)) : '');
+  const dayFmt = new Intl.DateTimeFormat('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  // Imported matches can lack a set time (timeTbd).
+  const fmtMatchTime = (m) => (m.timeTbd ? 'Tid ej satt' : fmtTime(m.dateTime));
+  const fmtMatchLong = (m) => (m.timeTbd && m.dateTime ? `${dayFmt.format(parseDate(m.dateTime))}, tid ej satt` : fmtLong(m.dateTime));
   const fmtStamp = (ms) => (ms ? new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(ms)) : '–');
   const fmtSize = (b) => (b > 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
 
@@ -84,6 +88,7 @@ const FF = (() => {
     await loadMe();
     nav.replaceChildren(
       el('a', { href: '/' }, 'Spelprogram'),
+      el('a', { href: '/resultat.html' }, 'Resultat'),
       el('a', { href: '/#klipp' }, 'Klipp'),
       me
         ? el('span', { class: 'row' },
@@ -132,5 +137,5 @@ const FF = (() => {
     );
   }
 
-  return { api, upload, el, fmtDate, fmtTime, fmtLong, fmtStamp, fmtSize, scoreText, statusBadge, teamLogo, renderTopbar, message, videoCard, get me() { return me; } };
+  return { api, upload, el, fmtDate, fmtTime, fmtLong, fmtMatchTime, fmtMatchLong, fmtStamp, fmtSize, scoreText, statusBadge, teamLogo, renderTopbar, message, videoCard, get me() { return me; } };
 })();

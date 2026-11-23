@@ -7,7 +7,6 @@ const { sendMail } = require('../mailer');
 const auth = require('../auth');
 
 const router = express.Router();
-const APPROVAL_DAYS = 30;
 
 const limiter = auth.rateLimit({ windowMs: 15 * 60000, max: 20 });
 
@@ -22,17 +21,18 @@ async function sendApprovalMail(user) {
     auth.sha256(token),
     user.id,
     now,
-    now + APPROVAL_DAYS * 86400000,
+    now + config.approvalLinkDays * 86400000,
   );
   const url = `${config.publicUrl}/godkann/${token}`;
   return sendMail({
     to: config.adminEmail,
     subject: `Ny användare vill ladda upp klipp: ${user.email}`,
-    text: `${user.email} har registrerat sig på Floorballflash och vill kunna ladda upp filmklipp.\nVälj om användaren ska godkännas eller nekas. Länken gäller i ${APPROVAL_DAYS} dagar.`,
+    text: `${user.email} har registrerat sig på Floorballflash och vill kunna ladda upp filmklipp.\nVälj om användaren ska godkännas eller nekas. Länken gäller i ${config.approvalLinkDays} dagar. Efter det kan du godkänna användaren på adminsidan.`,
     links: [
       { label: 'Godkänn användare', url: `${url}?val=godkann`, color: '#15803d' },
       { label: 'Neka användare', url: `${url}?val=neka`, color: '#b91c1c' },
     ],
+    secrets: [token],
   });
 }
 

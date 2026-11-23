@@ -5,15 +5,25 @@ const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const config = require('../config');
-const { db, getTeamSettings, setSetting } = require('../db');
+const { db, getSetting, getTeamSettings, setSetting } = require('../db');
 const { sendMail } = require('../mailer');
 const ibis = require('../ibis');
+const archive = require('../archive');
+const live = require('../live');
+const importer = require('../import');
 const auth = require('../auth');
 const { decide, sendApprovalMail } = require('./users');
 
 const router = express.Router();
 const limiter = auth.rateLimit({ windowMs: 15 * 60000, max: 20 });
 const SETUP_LINK_MINUTES = 60;
+
+// Failed admin logins are counted per IP address. A shared lock on the account would let
+// anyone keep the admin locked out just by guessing wrong now and then.
+const adminFailures = new Map(); // ip -> { count, lockedUntil }
+setInterval(() => {
+  for (const [ip, f] of adminFailures) if (f.lockedUntil < Date.now()) adminFailures.delete(ip);
+}, 15 * 60000).unref();
 
 function adminRow() {
   return db.prepare('SELECT * FROM admin WHERE id = 1').get();
@@ -30,19 +40,18 @@ router.post('/api/admin/login', limiter, async (req, res) => {
   const email = auth.normalizeEmail(req.body.email);
   const password = typeof req.body.password === 'string' ? req.body.password : '';
   const admin = adminRow();
-  if (admin.locked_until && admin.locked_until > Date.now()) {
+  const f = adminFailures.get(req.ip) || { count: 0, lockedUntil: 0 };
+  if (f.lockedUntil > Date.now()) {
     return res.status(429).json({ error: 'För många felaktiga försök. Inloggningen är låst i 15 minuter.' });
   }
   const ok = email === config.adminEmail && (await auth.verify(password, admin.password_hash || auth.dummyHash())) && Boolean(admin.password_hash);
   if (!ok) {
-    const failed = admin.failed_attempts + 1;
-    db.prepare('UPDATE admin SET failed_attempts = ?, locked_until = ? WHERE id = 1').run(
-      failed >= auth.MAX_FAILED ? 0 : failed,
-      failed >= auth.MAX_FAILED ? Date.now() + auth.LOCK_MS : null,
-    );
+    f.count += 1;
+    if (f.count >= auth.MAX_FAILED) Object.assign(f, { count: 0, lockedUntil: Date.now() + auth.LOCK_MS });
+    adminFailures.set(req.ip, f);
     return res.status(401).json({ error: 'Fel e-postadress eller lösenord.' });
   }
-  db.prepare('UPDATE admin SET failed_attempts = 0, locked_until = NULL WHERE id = 1').run();
+  adminFailures.delete(req.ip);
   auth.createSession(res, 'admin');
   res.json({ ok: true });
 });
@@ -66,6 +75,7 @@ router.post('/api/admin/request-password-link', limiter, async (req, res) => {
     subject: 'Skapa lösenord för Floorballflash admin',
     text: `Klicka på länken för att skapa ett nytt adminlösenord. Länken gäller i ${SETUP_LINK_MINUTES} minuter och kan bara användas en gång.\nOm du inte begärde detta kan du ignorera mejlet.`,
     links: [{ label: 'Skapa lösenord', url: `${config.publicUrl}/admin.html#token=${token}` }],
+    secrets: [token],
   });
   res.json({ ok: true, message: `En länk har skickats till ${config.adminEmail}.` });
 });
@@ -134,6 +144,7 @@ router.post('/api/admin/users/:id/reset-pin', async (req, res) => {
     subject: 'Ny pinkod till Floorballflash',
     text: `Administratören har gett dig en ny pinkod: ${pin}\nLogga in med din e-postadress och den nya pinkoden.`,
     links: [{ label: 'Logga in', url: `${config.publicUrl}/login.html` }],
+    secrets: [pin],
   });
   res.json({ ok: true, pin });
 });
@@ -146,7 +157,13 @@ router.delete('/api/admin/users/:id', (req, res) => {
 });
 
 router.get('/api/admin/settings', (req, res) => {
-  res.json({ settings: getTeamSettings(), mock: config.ibis.mock });
+  // The form edits only what is stored here; IDs from .env are always added on top.
+  const settings = { ...getTeamSettings(), competitionIds: getSetting('competitionIds', []), extraMatchIds: getSetting('extraMatchIds', []) };
+  res.json({
+    settings,
+    fromEnv: { competitionIds: config.competitionIds, extraMatchIds: config.extraMatchIds },
+    mock: config.ibis.mock,
+  });
 });
 
 function idList(value) {
@@ -185,6 +202,68 @@ router.delete('/api/admin/videos/:id', (req, res) => {
   db.prepare('DELETE FROM videos WHERE id = ?').run(v.id);
   fs.rm(path.join(config.uploadDir, v.filename), { force: true }, () => {});
   res.json({ ok: true });
+});
+
+// ---- matches pasted from stats.innebandy.se ----------------------------------------
+
+// The pasted page can be larger than the default JSON limit.
+router.post('/api/admin/import', express.json({ limit: '1mb' }), async (req, res) => {
+  const { teamId } = getTeamSettings();
+  const { matches, skipped } = importer.parse(req.body.tokens, { teamId });
+  if (!matches.length) {
+    return res.status(400).json({ error: 'Hittade inga matcher i det inklistrade. Kopiera hela spelprogrammet från stats.innebandy.se.' });
+  }
+  const isNew = (m) => !archive.has(m.id);
+  const summary = matches.map((m) => ({
+    id: m.id,
+    competition: m.competition,
+    dateTime: m.dateTime,
+    timeTbd: m.timeTbd,
+    home: m.home.name,
+    away: m.away.name,
+    goalsHome: m.goalsHome,
+    goalsAway: m.goalsAway,
+    venue: m.venue,
+    ours: m.home.id === teamId || m.away.id === teamId,
+    isNew: isNew(m),
+  }));
+  if (req.body.dryRun) return res.json({ matches: summary, skipped });
+  archive.rememberAll(matches, { observed: false });
+  await ibis.getSchedule({ force: true });
+  res.json({ saved: matches.length, added: summary.filter((m) => m.isNew).length, skipped });
+});
+
+router.get('/api/admin/matches', async (req, res) => {
+  const { matches } = await ibis.getSchedule();
+  res.json({ matches: matches.map(({ events, ...m }) => m) });
+});
+
+// Manual result and status, e.g. to correct a match or update the score during a game.
+router.put('/api/admin/matches/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const match = archive.get(id);
+  if (!match) return res.status(404).json({ error: 'Matchen finns inte.' });
+  const status = Number(req.body.status);
+  if (![1, 2, 3, 4].includes(status)) return res.status(400).json({ error: 'Ogiltig status.' });
+  const goal = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
+  const goalsHome = goal(req.body.goalsHome);
+  const goalsAway = goal(req.body.goalsAway);
+  for (const g of [goalsHome, goalsAway]) {
+    if (g !== null && !(Number.isInteger(g) && g >= 0 && g < 100)) return res.status(400).json({ error: 'Målen måste vara heltal 0–99.' });
+  }
+  if (status !== 1 && (goalsHome === null || goalsAway === null)) return res.status(400).json({ error: 'Ange ställningen för en pågående eller spelad match.' });
+  Object.assign(match, {
+    status,
+    statusText: ibis.STATUS_TEXT[status],
+    live: status === 2 || status === 3,
+    finished: status === 4,
+    goalsHome,
+    goalsAway,
+  });
+  archive.remember(match);
+  await ibis.getSchedule({ force: true });
+  live.broadcast(match);
+  res.json({ match });
 });
 
 module.exports = { router };

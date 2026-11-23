@@ -86,6 +86,17 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 
+  -- Last known data for every match seen, so played matches and their clips stay
+  -- browsable after they drop out of the schedule.
+  CREATE TABLE IF NOT EXISTS matches (
+    match_id    INTEGER PRIMARY KEY,
+    data        TEXT NOT NULL,
+    start_at    INTEGER,
+    status      INTEGER,
+    finished_at INTEGER,
+    updated_at  INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS mail_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     recipient  TEXT NOT NULL,
@@ -112,8 +123,8 @@ function getTeamSettings() {
   return {
     teamId: getSetting('teamId', config.teamId),
     seasonId: getSetting('seasonId', config.seasonId),
-    competitionIds: getSetting('competitionIds', []),
-    extraMatchIds: getSetting('extraMatchIds', []),
+    competitionIds: [...new Set([...config.competitionIds, ...getSetting('competitionIds', [])])],
+    extraMatchIds: [...new Set([...config.extraMatchIds, ...getSetting('extraMatchIds', [])])],
     teamMatchesPath: getSetting('teamMatchesPath', ''),
   };
 }

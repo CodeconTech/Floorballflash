@@ -10,7 +10,9 @@ services:
       # Appen ligger bakom Caddy; behövs för att se besökarnas riktiga IP-adress.
       TRUST_PROXY: "1"
     volumes:
-      - ./data:/data
+      # Databas och filmklipp. Lägg dem gärna utanför kodmappen (DATA_PATH i .env),
+      # så kan inget git-kommando eller en ny utcheckning av koden röra dem.
+      - ${DATA_PATH:-./data}:/data
     restart: unless-stopped
 
   caddy:

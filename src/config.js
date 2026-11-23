@@ -7,6 +7,10 @@ function int(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function idList(value) {
+  return [...new Set(String(value || '').split(/[\s,;]+/).map((v) => parseInt(v, 10)).filter((n) => n > 0))];
+}
+
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
 
 module.exports = {
@@ -22,10 +26,17 @@ module.exports = {
     ? process.env.COOKIE_SECURE === '1' || process.env.COOKIE_SECURE === 'true'
     : (process.env.PUBLIC_URL || '').startsWith('https://'),
   sessionDays: int(process.env.SESSION_DAYS, 30),
+  // How long the approve/deny link mailed to the admin stays valid.
+  approvalLinkDays: Math.max(1, int(process.env.APPROVAL_LINK_DAYS, 90)),
+  // Clips can be uploaded until this many hours after a match has been played.
+  uploadWindowHours: Math.max(1, int(process.env.UPLOAD_WINDOW_HOURS, 12)),
 
   // Default team/season, overridable from the admin page.
   teamId: int(process.env.TEAM_ID, 120879),
   seasonId: int(process.env.SEASON_ID, 44),
+  // Competitions (series) and extra matches that are always included, on top of the admin page's.
+  competitionIds: idList(process.env.COMPETITION_IDS),
+  extraMatchIds: idList(process.env.EXTRA_MATCH_IDS),
 
   ibis: {
     baseUrl: (process.env.IBIS_BASE_URL || 'https://api.innebandy.se').replace(/\/+$/, ''),
