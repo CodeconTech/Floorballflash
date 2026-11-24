@@ -46,6 +46,15 @@ module.exports = {
   competitionIds: idList(process.env.COMPETITION_IDS),
   extraMatchIds: idList(process.env.EXTRA_MATCH_IDS),
 
+  // Team channel on play.innebandy.se (Solidsport), e.g. holmsund-city-ibc-p14. Schedule,
+  // results and live scores are read from it when set.
+  solidsport: {
+    channel: (process.env.SOLIDSPORT_CHANNEL || '').trim(),
+    baseUrl: (process.env.SOLIDSPORT_BASE_URL || 'https://solidsport.com/api/play_v1').replace(/\/+$/, ''),
+    livePollSeconds: Math.max(15, int(process.env.SOLIDSPORT_LIVE_POLL_SECONDS, 30)),
+    pollMinutes: Math.max(2, int(process.env.SOLIDSPORT_POLL_MINUTES, 10)),
+  },
+
   ibis: {
     baseUrl: (process.env.IBIS_BASE_URL || 'https://api.innebandy.se').replace(/\/+$/, ''),
     mock: process.env.IBIS_MOCK === '1',

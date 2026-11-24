@@ -147,7 +147,15 @@
   }
 
   async function loadSettings() {
-    const { settings, fromEnv, mock } = await api('/api/admin/settings');
+    const { settings, fromEnv, mock, solidsport } = await api('/api/admin/settings');
+    if (solidsport.channel) {
+      $('solidsport-status').classList.remove('hidden');
+      $('solidsport-status').textContent = solidsport.lastError
+        ? `play.innebandy.se (${solidsport.channel}): fel vid senaste hämtningen – ${solidsport.lastError}`
+        : solidsport.lastSync
+          ? `Resultat och liveställning hämtas automatiskt från play.innebandy.se (${solidsport.channel}): ${solidsport.games} matcher, senast ${FF.fmtStamp(solidsport.lastSync)}.`
+          : `play.innebandy.se (${solidsport.channel}): första hämtningen pågår.`;
+    }
     $('env-comp').textContent = fromEnv.competitionIds.length ? `Från .env (COMPETITION_IDS), tas alltid med: ${fromEnv.competitionIds.join(', ')}` : '';
     $('env-extra').textContent = fromEnv.extraMatchIds.length ? `Från .env (EXTRA_MATCH_IDS), tas alltid med: ${fromEnv.extraMatchIds.join(', ')}` : '';
     const f = $('settings-form');

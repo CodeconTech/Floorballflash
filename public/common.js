@@ -73,7 +73,9 @@ const FF = (() => {
   }
 
   function teamLogo(t, size) {
-    return t.logo ? el('img', { src: t.logo, alt: '', width: size, height: size, loading: 'lazy', referrerpolicy: 'no-referrer' }) : null;
+    if (!t.logo) return null;
+    // Hide logos that fail to load instead of showing a broken image.
+    return el('img', { src: t.logo, alt: '', width: size, height: size, loading: 'lazy', referrerpolicy: 'no-referrer', onerror: (e) => e.target.remove() });
   }
 
   let me = null;

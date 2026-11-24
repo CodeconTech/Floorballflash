@@ -16,7 +16,9 @@ function parseStart(dateTime) {
   return Number.isFinite(t) ? t : null;
 }
 
+// IBIS events are fetched again when needed; events reported on the site exist only here.
 function strip(match) {
+  if (match.report) return match;
   const { events, ...rest } = match;
   return rest;
 }
@@ -52,13 +54,27 @@ function rememberAll(matches, options) {
   }
 }
 
+/**
+ * Whether two match records are the same game from different sources: same series and a
+ * start within 90 minutes (the same day when either has no set time).
+ */
+function sameGame(a, b) {
+  if (!a.dateTime || !b.dateTime || !a.competition || a.competition.toLowerCase() !== (b.competition || '').toLowerCase()) return false;
+  if (a.timeTbd || b.timeTbd) return a.dateTime.slice(0, 10) === b.dateTime.slice(0, 10);
+  return Math.abs(new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()) <= 90 * 60000;
+}
+
+function all() {
+  return db.prepare('SELECT data FROM matches').all().map((r) => JSON.parse(r.data));
+}
+
 function has(matchId) {
   return Boolean(db.prepare('SELECT 1 FROM matches WHERE match_id = ?').get(matchId));
 }
 
 function get(matchId) {
   const row = db.prepare('SELECT data FROM matches WHERE match_id = ?').get(matchId);
-  return row ? { ...JSON.parse(row.data), events: [] } : null;
+  return row ? { events: [], ...JSON.parse(row.data) } : null;
 }
 
 /**
@@ -89,10 +105,10 @@ function withVideos(excludeIds) {
     .filter((m) => !excludeIds.has(m.id));
 }
 
-/** Matches added by pasting the schedule from stats.innebandy.se, oldest first. */
+/** Matches the site keeps itself (pasted from stats.innebandy.se or synced from play.innebandy.se), oldest first. */
 function imported() {
   return db
-    .prepare("SELECT data FROM matches WHERE json_extract(data, '$.source') = 'import' ORDER BY start_at, match_id")
+    .prepare("SELECT data FROM matches WHERE json_extract(data, '$.source') IN ('import', 'solidsport') ORDER BY start_at, match_id")
     .all()
     .map((r) => JSON.parse(r.data));
 }
@@ -109,4 +125,4 @@ function played() {
     .map((r) => JSON.parse(r.data));
 }
 
-module.exports = { played, imported, remember, rememberAll, has, get, uploadWindow, withVideos, MATCH_LENGTH_MS };
+module.exports = { sameGame, all, played, imported, remember, rememberAll, has, get, uploadWindow, withVideos, MATCH_LENGTH_MS };
